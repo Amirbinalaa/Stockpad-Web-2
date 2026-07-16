@@ -16,8 +16,11 @@ User = get_user_model()
 class SiteAIntegrationTests(APITestCase):
     def setUp(self):
         # Override integration settings for predictable testing
+        settings.WM_WEBSITE_BASE_URL = "https://mock-site-a.com"
         settings.SITE_A_BASE_URL = "https://mock-site-a.com"
+        settings.WM_WEBSITE_API_KEY = "test-site-b-api-key"
         settings.SITE_A_API_KEY = "test-site-b-api-key"
+        settings.WEBHOOK_SHARED_SECRET = "test-webhook-secret"
         settings.SITE_A_WEBHOOK_SECRET = "test-webhook-secret"
         settings.SITE_B_PUBLIC_WEBHOOK_URL = "https://mock-site-b.com/api/webhooks/material-status/"
 
@@ -32,6 +35,14 @@ class SiteAIntegrationTests(APITestCase):
             site_a_material_id=456
         )
         self.client.force_authenticate(user=self.user)
+
+        # Patch the background executor to run tasks synchronously during tests
+        self.executor_patcher = patch('api.views._site_a_executor')
+        self.mock_executor = self.executor_patcher.start()
+        self.mock_executor.submit.side_effect = lambda fn, *args, **kwargs: fn(*args, **kwargs)
+
+    def tearDown(self):
+        self.executor_patcher.stop()
 
     @patch('api.views.submit_request_to_site_a')
     def test_create_request_success_sync(self, mock_submit):
@@ -53,10 +64,9 @@ class SiteAIntegrationTests(APITestCase):
         self.assertEqual(req.sync_status, 'synced')
         mock_submit.assert_called_once_with(
             material_id=456,
-            requester_id=self.user.id,
-            requester_email=self.user.email,
             quantity=5,
-            reason="Need it for fixing leak"
+            requester_email=self.user.email,
+            justification="Need it for fixing leak"
         )
 
     @patch('api.views.submit_request_to_site_a')
@@ -79,6 +89,7 @@ class SiteAIntegrationTests(APITestCase):
         self.assertIsNone(req.site_a_request_id)
 
     def test_webhook_valid_signature_updates_status(self):
+        import time as _time
         # Create a synced request
         material_request = MaterialRequest.objects.create(
             requested_by=self.user,
@@ -92,11 +103,15 @@ class SiteAIntegrationTests(APITestCase):
         url = reverse('site-a-webhook')
         payload = {"id": 999, "status": "approved"}
         body_bytes = json.dumps(payload).encode('utf-8')
+        timestamp = str(int(_time.time()))
+
+        # Reconstruct signing message: "{timestamp}.{raw_body}"
+        signing_message = f"{timestamp}.{body_bytes.decode('utf-8')}".encode('utf-8')
 
         # Generate valid HMAC signature
         signature = hmac.new(
-            key=settings.SITE_A_WEBHOOK_SECRET.encode("utf-8"),
-            msg=body_bytes,
+            key=settings.WEBHOOK_SHARED_SECRET.encode("utf-8"),
+            msg=signing_message,
             digestmod=hashlib.sha256
         ).hexdigest()
 
@@ -104,7 +119,8 @@ class SiteAIntegrationTests(APITestCase):
             url,
             data=body_bytes,
             content_type="application/json",
-            HTTP_X_SITE_A_SIGNATURE=signature
+            HTTP_X_WEBHOOK_SIGNATURE=signature,
+            HTTP_X_WEBHOOK_TIMESTAMP=timestamp
         )
         self.assertEqual(response.status_code, 200)
 
@@ -112,8 +128,7 @@ class SiteAIntegrationTests(APITestCase):
         material_request.refresh_from_db()
         self.assertEqual(material_request.status, 'approved')
 
-        # Check status history (should have 2: 1 for creation 'pending', 1 for webhook 'approved')
-        # Note: the test create here did not run signals or CreateRequestView perform_create so it has only 1 history entry from the webhook.
+        # Check status history
         history = RequestStatusHistory.objects.filter(request=material_request)
         self.assertEqual(history.count(), 1)
         self.assertEqual(history.first().old_status, 'pending')
@@ -121,6 +136,7 @@ class SiteAIntegrationTests(APITestCase):
         self.assertIsNone(history.first().changed_by)
 
     def test_webhook_invalid_signature_returns_403(self):
+        import time as _time
         material_request = MaterialRequest.objects.create(
             requested_by=self.user,
             material=self.material,
@@ -133,12 +149,14 @@ class SiteAIntegrationTests(APITestCase):
         url = reverse('site-a-webhook')
         payload = {"id": 999, "status": "approved"}
         body_bytes = json.dumps(payload).encode('utf-8')
+        timestamp = str(int(_time.time()))
 
         response = self.client.post(
             url,
             data=body_bytes,
             content_type="application/json",
-            HTTP_X_SITE_A_SIGNATURE="invalid-signature-here"
+            HTTP_X_WEBHOOK_SIGNATURE="invalid-signature-here",
+            HTTP_X_WEBHOOK_TIMESTAMP=timestamp
         )
         self.assertEqual(response.status_code, 403)
 
@@ -147,13 +165,17 @@ class SiteAIntegrationTests(APITestCase):
         self.assertEqual(material_request.status, 'pending')
 
     def test_webhook_unknown_request_id_returns_404(self):
+        import time as _time
         url = reverse('site-a-webhook')
         payload = {"id": 8888, "status": "approved"}
         body_bytes = json.dumps(payload).encode('utf-8')
+        timestamp = str(int(_time.time()))
+
+        signing_message = f"{timestamp}.{body_bytes.decode('utf-8')}".encode('utf-8')
 
         signature = hmac.new(
-            key=settings.SITE_A_WEBHOOK_SECRET.encode("utf-8"),
-            msg=body_bytes,
+            key=settings.WEBHOOK_SHARED_SECRET.encode("utf-8"),
+            msg=signing_message,
             digestmod=hashlib.sha256
         ).hexdigest()
 
@@ -161,11 +183,13 @@ class SiteAIntegrationTests(APITestCase):
             url,
             data=body_bytes,
             content_type="application/json",
-            HTTP_X_SITE_A_SIGNATURE=signature
+            HTTP_X_WEBHOOK_SIGNATURE=signature,
+            HTTP_X_WEBHOOK_TIMESTAMP=timestamp
         )
         self.assertEqual(response.status_code, 404)
 
     def test_webhook_duplicate_status_delivery_idempotent(self):
+        import time as _time
         # Create request already in 'approved' status
         material_request = MaterialRequest.objects.create(
             requested_by=self.user,
@@ -179,10 +203,13 @@ class SiteAIntegrationTests(APITestCase):
         url = reverse('site-a-webhook')
         payload = {"id": 999, "status": "approved"}
         body_bytes = json.dumps(payload).encode('utf-8')
+        timestamp = str(int(_time.time()))
+
+        signing_message = f"{timestamp}.{body_bytes.decode('utf-8')}".encode('utf-8')
 
         signature = hmac.new(
-            key=settings.SITE_A_WEBHOOK_SECRET.encode("utf-8"),
-            msg=body_bytes,
+            key=settings.WEBHOOK_SHARED_SECRET.encode("utf-8"),
+            msg=signing_message,
             digestmod=hashlib.sha256
         ).hexdigest()
 
@@ -191,7 +218,8 @@ class SiteAIntegrationTests(APITestCase):
             url,
             data=body_bytes,
             content_type="application/json",
-            HTTP_X_SITE_A_SIGNATURE=signature
+            HTTP_X_WEBHOOK_SIGNATURE=signature,
+            HTTP_X_WEBHOOK_TIMESTAMP=timestamp
         )
         self.assertEqual(response.status_code, 200)
 
@@ -206,21 +234,19 @@ class SiteAIntegrationTests(APITestCase):
 
         result = submit_request_to_site_a(
             material_id=456,
-            requester_id=1,
-            requester_email="engineer@test.com",
             quantity=5,
-            reason="justification reason"
+            requester_email="engineer@test.com",
+            justification="justification reason"
         )
 
         self.assertEqual(result["id"], 12345)
         mock_post.assert_called_once_with(
             "https://mock-site-a.com/api/inventory/requests/create/",
             json={
-                "material": 456,
-                "requester_id": "1",
+                "material_id": 456,
+                "quantity": 5,
+                "justification": "justification reason",
                 "requester_email": "engineer@test.com",
-                "quantity": "5",
-                "reason": "justification reason",
                 "webhook_url": "https://mock-site-b.com/api/webhooks/material-status/"
             },
             headers={"X-Site-B-API-Key": "test-site-b-api-key"},

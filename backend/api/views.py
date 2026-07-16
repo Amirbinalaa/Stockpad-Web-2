@@ -1,4 +1,4 @@
-from backend.api import serializers
+from . import serializers
 from rest_framework import generics, status, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -32,19 +32,25 @@ logger = logging.getLogger('api')
 _site_a_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="site_a_sync")
 
 
-def _sync_to_site_a(request_id, material_site_a_id, user_id, user_email, quantity, reason):
+def _sync_to_site_a(request_id, material_site_a_id, requester_email, quantity, reason):
     """
-    Background worker: calls Site A and updates the local MaterialRequest with the result.
-    Runs in a thread-pool thread so the HTTP response is never blocked by Site A latency.
+    Background worker: calls the WM Website and updates the local MaterialRequest with the result.
+    Runs in a thread-pool thread so the HTTP response is never blocked by WM Website latency.
+
+    Args:
+        request_id:        Local MaterialRequest PK — used to write back the result.
+        material_site_a_id: The WM Website's own material ID (Material.site_a_material_id).
+        requester_email:   Engineer's email — forwarded to WM so managers know who requested.
+        quantity:          Quantity being requested.
+        reason:            Free-text justification (maps to MaterialRequest.justification).
     """
     from django.db import connection
     try:
         site_a_response = submit_request_to_site_a(
             material_id=material_site_a_id,
-            requester_id=user_id,
-            requester_email=user_email,
             quantity=quantity,
-            reason=reason,
+            requester_email=requester_email,
+            justification=reason,
         )
         # Use .filter().update() — safe from any thread, avoids stale-object issues.
         from .models import MaterialRequest
@@ -52,11 +58,11 @@ def _sync_to_site_a(request_id, material_site_a_id, user_id, user_email, quantit
             site_a_request_id=site_a_response["id"],
             sync_status='synced',
         )
-        logger.info(f"[BG] Request {request_id} synced to Site A (Site A ID: {site_a_response['id']}).")
+        logger.info(f"[BG] Request {request_id} synced to WM Website (WM ID: {site_a_response['id']}).")
     except (SiteAError, requests.exceptions.RequestException) as e:
         from .models import MaterialRequest
         MaterialRequest.objects.filter(pk=request_id).update(sync_status='sync_failed')
-        logger.error(f"[BG] Failed to sync request {request_id} to Site A: {e}")
+        logger.error(f"[BG] Failed to sync request {request_id} to WM Website: {e}")
     finally:
         # Each thread-pool thread holds its own DB connection; close it to prevent pool exhaustion.
         connection.close()
@@ -233,13 +239,15 @@ class CreateRequestView(generics.CreateAPIView):
         )
 
         # Fire-and-forget: submit to background thread and return immediately to the caller.
-        logger.info(f"Dispatching Site A sync for request {material_request.id} (material: {material_request.material.name}) to background thread.")
+        logger.info(
+            f"Dispatching WM Website sync for request {material_request.id} "
+            f"(material: {material_request.material.name}) to background thread."
+        )
         _site_a_executor.submit(
             _sync_to_site_a,
             material_request.id,
             material_request.material.site_a_material_id,
-            self.request.user.id,
-            self.request.user.email,
+            self.request.user.email,      # forwarded to WM so managers see who requested
             material_request.quantity_needed,
             material_request.justification,
         )
@@ -284,29 +292,70 @@ class SiteAWebhookView(APIView):
     permission_classes = [permissions.AllowAny]  # authenticated via HMAC, not session/JWT
 
     def post(self, request):
-        received_sig = request.headers.get("X-Site-A-Signature", "")
+        import time as _time
+
+        # ── Step 1: Require both security headers ────────────────────────────
+        received_sig = request.headers.get("X-Webhook-Signature", "")
+        received_ts  = request.headers.get("X-Webhook-Timestamp", "")
+
+        if not received_sig or not received_ts:
+            logger.warning(
+                "Inbound webhook rejected: missing X-Webhook-Signature or "
+                "X-Webhook-Timestamp header."
+            )
+            return HttpResponse(status=400)
+
+        # ── Step 2: Replay-attack window (±5 minutes) ────────────────────────
+        try:
+            ts_int = int(received_ts)
+        except ValueError:
+            logger.warning("Inbound webhook rejected: X-Webhook-Timestamp is not a valid integer.")
+            return HttpResponse(status=400)
+
+        if abs(_time.time() - ts_int) > 300:
+            logger.warning(
+                f"Inbound webhook rejected: timestamp {received_ts} is outside the "
+                "300-second replay-attack window."
+            )
+            return HttpResponse(status=403)
+
+        # ── Step 3: HMAC-SHA256 signature verification ───────────────────────
+        # WM Website signs:  HMAC-SHA256(secret, f"{timestamp}.{raw_json_body}")
+        # We must reconstruct the exact same signing message.
+        raw_body_str = request.body.decode("utf-8")
+        signing_message = f"{received_ts}.{raw_body_str}".encode("utf-8")
         expected_sig = hmac.new(
-            key=settings.SITE_A_WEBHOOK_SECRET.encode("utf-8"),
-            msg=request.body,
+            key=settings.WEBHOOK_SHARED_SECRET.encode("utf-8"),
+            msg=signing_message,
             digestmod=hashlib.sha256,
         ).hexdigest()
 
         if not hmac.compare_digest(received_sig, expected_sig):
-            logger.warning("Inbound webhook signature verification failed.")
+            logger.warning("Inbound webhook rejected: HMAC signature mismatch.")
             return HttpResponse(status=403)
 
+        # ── Step 4: Parse JSON payload ───────────────────────────────────────
         try:
             payload = json.loads(request.body)
         except json.JSONDecodeError:
-            logger.error("Inbound webhook received invalid JSON payload.")
+            logger.error("Inbound webhook rejected: payload is not valid JSON.")
             return HttpResponse(status=400)
 
-        site_a_id = payload.get("id")
-        new_status = payload.get("status")
+        site_a_id  = payload.get("id")
+        raw_status = payload.get("status")
 
+        # ── Step 5: Map WM status values to our internal choices ─────────────
+        # WM Website sends "approved" or "denied"; our MaterialRequest model
+        # uses "approved" and "rejected" — map accordingly.
+        STATUS_MAP = {"approved": "approved", "denied": "rejected"}
+        new_status = STATUS_MAP.get(raw_status, raw_status)
+
+        # ── Step 6: Persist the status update (idempotent) ───────────────────
         try:
             with transaction.atomic():
-                material_request = MaterialRequest.objects.select_for_update().get(site_a_request_id=site_a_id)
+                material_request = MaterialRequest.objects.select_for_update().get(
+                    site_a_request_id=site_a_id
+                )
                 if material_request.status != new_status:  # idempotency guard
                     old_status = material_request.status
                     material_request.status = new_status
@@ -316,15 +365,22 @@ class SiteAWebhookView(APIView):
                         old_status=old_status,
                         new_status=new_status,
                         changed_by=None,
-                        notes='Status updated via Website 1 webhook.',
+                        notes=f'Status updated via WM Website webhook (raw: "{raw_status}").',
                     )
-                    logger.info(f"Webhook updated request {material_request.id} (Site A ID: {site_a_id}) status from '{old_status}' to '{new_status}'.")
+                    logger.info(
+                        f"Webhook: request {material_request.id} (WM ID: {site_a_id}) "
+                        f"updated '{old_status}' → '{new_status}'."
+                    )
                 else:
-                    logger.info(f"Webhook received status '{new_status}' matching current status for request {material_request.id}.")
+                    logger.info(
+                        f"Webhook: request {material_request.id} already has "
+                        f"status '{new_status}' — no-op (idempotent)."
+                    )
         except MaterialRequest.DoesNotExist:
-            logger.warning(f"Webhook received for unknown site_a_request_id={site_a_id}.")
+            logger.warning(f"Webhook received for unknown WM request id={site_a_id}.")
             return HttpResponse(status=404)
 
+        # Return 200 immediately so WM Website doesn't retry unnecessarily.
         return JsonResponse({"ok": True}, status=200)
 
 

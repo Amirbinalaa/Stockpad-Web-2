@@ -96,16 +96,25 @@ if not db_password:
     else:
         raise ImproperlyConfigured("DB_PASSWORD environment variable is missing for production.")
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "stockpad_db",        # <-- Your PostgreSQL database name
-        "USER": "postgres",           # <-- Your PostgreSQL username
-        "PASSWORD": db_password,
-        "HOST": "localhost",
-        "PORT": "5432",
+import sys
+if "test" in sys.argv:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db_test.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": "stockpad_db",        # <-- Your PostgreSQL database name
+            "USER": "postgres",           # <-- Your PostgreSQL username
+            "PASSWORD": db_password,
+            "HOST": "localhost",
+            "PORT": "5432",
+        }
+    }
 
 
 # Password validation
@@ -204,22 +213,37 @@ GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
 
 
-# Website 1 (StockPad) Integration Settings
-SITE_A_BASE_URL = os.environ.get("SITE_A_BASE_URL", "https://stockpad-backend-production.up.railway.app")
-SITE_A_API_KEY = os.environ.get("SITE_A_API_KEY")           # sent as X-Site-B-API-Key on outbound calls
-SITE_A_WEBHOOK_SECRET = os.environ.get("SITE_A_WEBHOOK_SECRET")  # used to verify X-Site-A-Signature on inbound webhooks
+# ── Website 1 (WM Website) Integration Settings ──────────────────────────────
+# Primary env var names (task spec / new standard):
+WM_WEBSITE_BASE_URL = (
+    os.environ.get("WM_WEBSITE_BASE_URL")
+    or os.environ.get("SITE_A_BASE_URL", "https://stockpad-backend-production.up.railway.app")
+)
+WM_WEBSITE_API_KEY = (
+    os.environ.get("WM_WEBSITE_API_KEY")
+    or os.environ.get("SITE_A_API_KEY")
+)  # sent as X-Site-B-API-Key on all outbound calls to WM Website
+WEBHOOK_SHARED_SECRET = (
+    os.environ.get("WEBHOOK_SHARED_SECRET")
+    or os.environ.get("SITE_A_WEBHOOK_SECRET")
+)  # HMAC-SHA256 shared secret — used to verify X-Webhook-Signature on inbound webhooks
 SITE_B_PUBLIC_WEBHOOK_URL = os.environ.get("SITE_B_PUBLIC_WEBHOOK_URL")  # e.g. https://<this-domain>/api/webhooks/material-status/
+
+# Backward-compat aliases — existing .env files using SITE_A_* continue to work
+SITE_A_BASE_URL       = WM_WEBSITE_BASE_URL
+SITE_A_API_KEY        = WM_WEBSITE_API_KEY
+SITE_A_WEBHOOK_SECRET = WEBHOOK_SHARED_SECRET
 
 # Startup validation check for production settings
 if not DEBUG:
     missing_vars = []
-    if not SITE_A_API_KEY:
-        missing_vars.append("SITE_A_API_KEY")
-    if not SITE_A_WEBHOOK_SECRET:
-        missing_vars.append("SITE_A_WEBHOOK_SECRET")
+    if not WM_WEBSITE_API_KEY:
+        missing_vars.append("WM_WEBSITE_API_KEY (or SITE_A_API_KEY)")
+    if not WEBHOOK_SHARED_SECRET:
+        missing_vars.append("WEBHOOK_SHARED_SECRET (or SITE_A_WEBHOOK_SECRET)")
     if not SITE_B_PUBLIC_WEBHOOK_URL:
         missing_vars.append("SITE_B_PUBLIC_WEBHOOK_URL")
-    
+
     if missing_vars:
         raise ImproperlyConfigured(
             f"Production integration settings missing: {', '.join(missing_vars)}. "
