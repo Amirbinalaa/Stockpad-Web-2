@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockPad — Smart Inventory Management</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css">
+    <script src="https://accounts.google.com/gsi/client?hl=en" async defer></script>
+    <script>
+        if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark-mode');
+    </script>
+</head>
+
+<body>
+
+    <!-- ═══════════════════════════════════════════════════════
+     AUTH VIEWS (No sidebar)
+     ═══════════════════════════════════════════════════════ -->
+
+    <!-- LOGIN VIEW -->
+    <div id="view-login" class="view-section auth-view">
+        <div class="login-container">
+            <h2 data-i18n="login.title">Stock Pad</h2>
+            <div id="login-error" style="color: #ff4444; margin-bottom: 1rem; text-align: center; display: none;"></div>
+            <div class="input-group">
+                <label for="login-email" data-i18n="login.email">Email</label>
+                <input type="email" id="login-email" placeholder="Enter your email"
+                    data-i18n-placeholder="login.emailPlaceholder" required>
+            </div>
+            <div class="input-group">
+                <label for="login-password" data-i18n="login.password">Password</label>
+                <input type="password" id="login-password" placeholder="Enter your password"
+                    data-i18n-placeholder="login.passwordPlaceholder" required>
+            </div>
+            <div class="remember-forgot">
+                <label><input type="checkbox" id="rememberMe"><span data-i18n="login.remember"> Remember
+                        Me</span></label>
+                <a href="#" onclick="navigateTo('forgot'); return false;" data-i18n="login.forgot">Forgot Password?</a>
+            </div>
+            <button class="auth-btn" id="loginBtn" data-i18n="login.btn">Login</button>
+            <div class="auth-divider"><span>OR</span></div>
+            <div id="googleLoginBtnContainer" style="display: flex; justify-content: center; margin-top: 10px;"></div>
+            <div class="signup">
+                <span data-i18n="login.noAccount">Don't have an account? </span><a href="#"
+                    onclick="navigateTo('signup'); return false;" data-i18n="login.signup">SignUp</a>
+            </div>
+            <div style="display: flex; justify-content: center; margin-top: 1.5rem;">
+                <button onclick="i18n.toggle()"
+                    style="background: none; border: none; cursor: pointer; font-size: 0.9rem; color: var(--text-secondary); font-weight: 500; display: flex; align-items: center; gap: 0.4rem; transition: color 0.2s;">
+                    <i class="fas fa-globe"></i> <span data-i18n="sidebar.language">🌐 عربي</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SIGNUP VIEW -->
+    <div id="view-signup" class="view-section auth-view">
+        <div class="signup-container">
+            <h2 data-i18n="signup.title">Stock Pad - Sign Up</h2>
+            <div class="input-group">
+                <label for="signup-username" data-i18n="signup.username">Username</label>
+                <input type="text" id="signup-username" placeholder="Pick a username"
+                    data-i18n-placeholder="signup.usernamePlaceholder">
+            </div>
+            <div class="input-group">
+                <label for="signup-email" data-i18n="login.email">Email</label>
+                <input type="email" id="signup-email" placeholder="Enter your email"
+                    data-i18n-placeholder="login.emailPlaceholder" required>
+            </div>
+            <div class="input-group">
+                <label for="signup-role" data-i18n="signup.role">Role</label>
+                <select id="signup-role"
+                    style="width: 100%; padding: 0.8rem; border-radius: 8px; border: 1px solid #ddd; background: #fff; color: #333;">
+                    <option value="engineer" data-i18n="signup.engineer">Site Engineer</option>
+                    <option value="warehouse" data-i18n="signup.warehouse">Warehouse Manager</option>
+                    <option value="admin" data-i18n="signup.admin">Admin</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label for="signup-password" data-i18n="login.password">Password</label>
+                <input type="password" id="signup-password" placeholder="Enter your password"
+                    data-i18n-placeholder="login.passwordPlaceholder" required>
+            </div>
+            <div class="input-group">
+                <label for="signup-confirm" data-i18n="signup.confirmPassword">Confirm Password</label>
+                <input type="password" id="signup-confirm" placeholder="Confirm your password"
+                    data-i18n-placeholder="signup.confirmPlaceholder" required>
+            </div>
+            <button class="auth-btn" id="signupBtn" data-i18n="signup.btn">Sign Up</button>
+            <div class="auth-divider"><span>OR</span></div>
+            <div id="googleSignupBtnContainer" style="display: flex; justify-content: center; margin-top: 10px;"></div>
+            <div class="login-link">
+                <span data-i18n="signup.hasAccount">Already have an account? </span><a href="#"
+                    onclick="navigateTo('login'); return false;" data-i18n="signup.login">Login</a>
+            </div>
+            <div style="display: flex; justify-content: center; margin-top: 1.5rem;">
+                <button onclick="i18n.toggle()"
+                    style="background: none; border: none; cursor: pointer; font-size: 0.9rem; color: var(--text-secondary); font-weight: 500; display: flex; align-items: center; gap: 0.4rem; transition: color 0.2s;">
+                    <i class="fas fa-globe"></i> <span data-i18n="sidebar.language">🌐 عربي</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- FORGOT PASSWORD VIEW -->
+    <div id="view-forgot" class="view-section auth-view">
+        <div class="forgot-container">
+            <h2 data-i18n="forgot.title">Reset Password</h2>
+            <p data-i18n="forgot.subtitle">Enter your email to receive a reset link</p>
+            <div class="input-group">
+                <input type="email" id="forgot-email" placeholder="Enter your email"
+                    data-i18n-placeholder="forgot.emailPlaceholder">
+            </div>
+            <button class="auth-btn" id="forgotBtn" data-i18n="forgot.btn">Send Reset Link</button>
+            <div class="back-login">
+                <a href="#" onclick="navigateTo('login'); return false;" data-i18n="forgot.back">Back to Login</a>
+            </div>
+            <div style="display: flex; justify-content: center; margin-top: 1.5rem;">
+                <button onclick="i18n.toggle()"
+                    style="background: none; border: none; cursor: pointer; font-size: 0.9rem; color: var(--text-secondary); font-weight: 500; display: flex; align-items: center; gap: 0.4rem; transition: color 0.2s;">
+                    <i class="fas fa-globe"></i> <span data-i18n="sidebar.language">🌐 عربي</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- RESET PASSWORD VIEW -->
+    <div id="view-reset" class="view-section auth-view">
+        <div class="forgot-container">
+            <h2>Set New Password</h2>
+            <p>Enter your new password below</p>
+            <div class="input-group">
+                <input type="password" id="reset-newPassword" placeholder="New Password">
+            </div>
+            <div class="input-group">
+                <input type="password" id="reset-confirmPassword" placeholder="Confirm New Password">
+            </div>
+            <button class="auth-btn" id="resetBtn">Reset Password</button>
+            <div class="back-login">
+                <a href="#" onclick="navigateTo('login'); return false;">Back to Login</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+     APP WRAPPER (Sidebar + Content Views)
+     ═══════════════════════════════════════════════════════ -->
+    <div id="app-wrapper">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1 class="logo">StockPad</h1>
+                <p class="tagline" data-i18n="sidebar.tagline">smart inventory management</p>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item" data-view="inventory" onclick="navigateTo('inventory'); return false;">
+                    <i class="fas fa-th-large"></i>
+                    <span data-i18n="sidebar.inventory">Inventory</span>
+                </a>
+                <a href="#" class="nav-item" data-view="chatbot" onclick="navigateTo('chatbot'); return false;">
+                    <i class="fas fa-comments"></i>
+                    <span data-i18n="sidebar.chatbot">Chat Bot</span>
+                </a>
+                <a href="#" class="nav-item" data-view="requests" onclick="navigateTo('requests'); return false;">
+                    <i class="fas fa-inbox"></i>
+                    <span data-i18n="sidebar.requests">Requests</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button id="themeToggle" class="nav-item"
+                    style="background:none;border:none;width:100%;text-align:left;">
+                    <i class="fas fa-moon"></i>
+                    <span data-i18n="sidebar.darkMode">Dark Mode</span>
+                </button>
+                <button onclick="i18n.toggle()" class="nav-item lang-toggle-btn">
+                    <i class="fas fa-language"></i>
+                    <span data-i18n="sidebar.language">🌐 عربي</span>
+                </button>
+                <a href="#" class="nav-item" data-view="profile" onclick="navigateTo('profile'); return false;">
+                    <i class="fas fa-user"></i>
+                    <span data-i18n="sidebar.account">Account / Profile</span>
+                </a>
+                <a href="#" class="nav-item" id="logoutBtn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span data-i18n="sidebar.logout">Logout</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- ── INVENTORY VIEW ───────────────────────────────── -->
+        <main class="main-content" id="view-inventory" style="display:none;">
+            <header class="page-header" style="position:relative;">
+                <div class="container">
+                    <div>
+                        <h1 class="page-title">
+                            <i class="fas fa-warehouse"></i>
+                            <span data-i18n="inv.title">Raw Materials Inventory</span>
+                        </h1>
+                        <p class="page-subtitle" data-i18n="inv.subtitle">Browse and request available materials</p>
+                    </div>
+                </div>
+                <div style="position:absolute;top:50%;right:2rem;transform:translateY(-50%);">
+                    <div id="inv-notifBell" title="Notifications"
+                        style="background:var(--bg-card);border:1px solid var(--border-color);width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.05rem;color:var(--text-secondary);transition:all 0.2s;position:relative;">
+                        <i class="fas fa-bell"></i>
+                        <span id="inv-notifBadge"
+                            style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:white;border-radius:50%;width:18px;height:18px;font-size:0.65rem;font-weight:700;display:none;align-items:center;justify-content:center;"></span>
+                    </div>
+                    <div id="inv-notifPanel"
+                        style="position:absolute;right:0;top:calc(100% + 8px);width:320px;z-index:9999;background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;box-shadow:var(--shadow-md);display:none;overflow:hidden;">
+                        <div
+                            style="padding:0.9rem 1.2rem;font-weight:700;font-size:0.9rem;border-bottom:1px solid var(--border-color);">
+                            <i class="fas fa-bell"
+                                style="color:var(--accent-color);margin-right:0.4rem"></i>Notifications
+                        </div>
+                        <div id="inv-notifList" style="max-height:300px;overflow-y:auto;">
+                            <div style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">No
+                                notifications yet.</div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            <section class="search-section">
+                <div class="container">
+                    <div class="search-container" style="margin-bottom: 0;">
+                        <div class="search-wrapper">
+                            <i class="fas fa-search search-icon"></i>
+                            <input type="text" class="search-input" id="inventorySearch"
+                                placeholder="Search inventory items..." autocomplete="off">
+                            <button class="clear-btn" id="clearSearchBtn" style="display: none;"><i
+                                    class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            <section class="categories-section">
+                <div class="container">
+                    <div class="categories-wrapper">
+                        <button class="category-chip active" data-category="all"><i class="fas fa-th-large"></i><span
+                                data-i18n="inv.all">All Items</span></button>
+                        <button class="category-chip" data-category="building"><i class="fas fa-building"></i><span
+                                data-i18n="inv.building">Building Materials</span></button>
+                        <button class="category-chip" data-category="steel"><i class="fas fa-wrench"></i><span
+                                data-i18n="inv.steel">Steel & Metal</span></button>
+                        <button class="category-chip" data-category="paint"><i class="fas fa-paint-roller"></i><span
+                                data-i18n="inv.paint">Paints</span></button>
+                        <button class="category-chip" data-category="finishing"><i class="fas fa-hammer"></i><span
+                                data-i18n="inv.finishing">Finishing</span></button>
+                        <button class="category-chip" data-category="plumbing"><i class="fas fa-faucet"></i><span
+                                data-i18n="inv.plumbing">Plumbing</span></button>
+                        <button class="category-chip" data-category="electrical"><i class="fas fa-bolt"></i><span
+                                data-i18n="inv.electrical">Electrical</span></button>
+                    </div>
+                </div>
+            </section>
+            <section class="products-section">
+                <div class="container">
+                    <div class="products-grid" id="productsGrid"></div>
+                </div>
+            </section>
+
+            <!-- Request Modal (Inventory) -->
+            <div id="requestModal" class="modal"
+                style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:10000;justify-content:center;align-items:center;">
+                <div class="modal-content"
+                    style="background:var(--bg-card);padding:2.5rem;border-radius:16px;max-width:450px;width:90%;box-shadow:0 20px 50px rgba(0,0,0,0.3);border:1px solid var(--border-color);animation:modalSlideUp 0.3s ease-out;">
+                    <div class="modal-header"
+                        style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;">
+                        <h3 style="margin:0;color:var(--text-primary);font-size:1.5rem;">Request Material</h3>
+                        <button onclick="closeRequestModal()"
+                            style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-muted);">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div style="margin-bottom:1.5rem;">
+                            <label
+                                style="display:block;font-size:0.9rem;font-weight:600;color:var(--text-secondary);margin-bottom:0.5rem;">Material</label>
+                            <div id="modalMaterialName"
+                                style="font-size:1.1rem;font-weight:700;color:var(--accent-color);"></div>
+                        </div>
+                        <div style="margin-bottom:1.5rem;">
+                            <label
+                                style="display:block;font-size:0.9rem;font-weight:600;color:var(--text-secondary);margin-bottom:0.5rem;">Quantity
+                                Needed</label>
+                            <div style="display:flex;gap:12px;align-items:center;">
+                                <input type="number" id="modalQtyInput" placeholder="1" step="1"
+                                    style="flex:1;padding:0.8rem 1rem;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-input);color:var(--text-primary);font-size:1rem;outline:none;">
+                                <span id="modalUnitText"
+                                    style="font-weight:600;color:var(--text-muted);min-width:60px;">Bags</span>
+                            </div>
+                        </div>
+                        <div style="margin-bottom:2rem;">
+                            <label
+                                style="display:block;font-size:0.9rem;font-weight:600;color:var(--text-secondary);margin-bottom:0.5rem;">Justification
+                                / Note (Optional)</label>
+                            <textarea id="modalNotesInput" placeholder="Reason for request..."
+                                style="width:100%;padding:0.8rem 1rem;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-input);color:var(--text-primary);font-size:1rem;outline:none;resize:vertical;"
+                                rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="display:flex;gap:12px;justify-content:flex-end;">
+                        <button onclick="closeRequestModal()"
+                            style="padding:0.8rem 1.5rem;border-radius:10px;border:none;background:var(--badge-bg);color:var(--badge-text);font-weight:600;cursor:pointer;">Cancel</button>
+                        <button id="modalSubmitBtn"
+                            style="padding:0.8rem 2rem;border-radius:10px;border:none;background:var(--accent-color);color:white;font-weight:700;cursor:pointer;transition:transform 0.2s;">Submit
+                            Request</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ── CHATBOT VIEW ─────────────────────────────────── -->
+        <main class="main-content" id="view-chatbot" style="display:none;">
+            <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <h2 data-i18n="chat.title">Inventory Assistant Chat Bot</h2>
+                <div class="header-actions">
+                    <div style="position:relative;">
+                        <div id="chat-notifBell" title="Notifications"
+                            style="background:var(--bg-card);border:1px solid var(--border-color);width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.05rem;color:var(--text-secondary);transition:all 0.2s;flex-shrink:0;">
+                            <i class="fas fa-bell"></i>
+                            <span id="chat-notifBadge"
+                                style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:white;border-radius:50%;width:18px;height:18px;font-size:0.65rem;font-weight:700;display:none;align-items:center;justify-content:center;"></span>
+                        </div>
+                        <div id="chat-notifPanel"
+                            style="position:absolute;right:0;top:calc(100% + 8px);width:320px;z-index:9999;background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;box-shadow:var(--shadow-md);display:none;overflow:hidden;">
+                            <div
+                                style="padding:0.9rem 1.2rem;font-weight:700;font-size:0.9rem;border-bottom:1px solid var(--border-color);">
+                                <i class="fas fa-bell"
+                                    style="color:var(--accent-color);margin-right:0.4rem"></i>Notifications
+                            </div>
+                            <div id="chat-notifList" style="max-height:300px;overflow-y:auto;">
+                                <div
+                                    style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">
+                                    No notifications yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="newChatBtn" class="new-chat-btn"><i class="fas fa-plus"></i><span
+                            data-i18n="chat.newChat">New Chat</span></button>
+                    <button id="showHistoryBtn" class="history-btn"><i class="fas fa-history"></i><span
+                            data-i18n="chat.history">History</span></button>
+                </div>
+            </div>
+            <div id="historyOverlay" class="history-overlay"></div>
+            <div id="historyPanel" class="history-panel">
+                <div class="history-header">
+                    <h3 data-i18n="chat.historyTitle">Chat History</h3>
+                    <i class="fas fa-times close-history" id="closeHistory"></i>
+                </div>
+                <div id="historyList" class="history-list"></div>
+            </div>
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages"></div>
+                <div class="quick-questions">
+                    <button class="quick-btn" onclick="askQuestion(i18n.t('chat.outOfStock'))"><i
+                            class="fas fa-exclamation-triangle"></i><span data-i18n="chat.outOfStock">What's out of
+                            stock?</span></button>
+                    <button class="quick-btn" onclick="askQuestion(i18n.t('chat.lowStock'))"><i
+                            class="fas fa-chart-line"></i><span data-i18n="chat.lowStock">Low stock
+                            items</span></button>
+                    <button class="quick-btn" onclick="askQuestion(i18n.t('chat.totalValue'))"><i
+                            class="fas fa-dollar-sign"></i><span data-i18n="chat.totalValue">Total inventory
+                            value</span></button>
+                </div>
+                <div class="chat-input-area">
+                    <div id="filePreview" class="file-preview-container" style="display: none;"></div>
+                    <div class="input-wrapper">
+                        <button class="attach-btn" id="attachBtn" title="Attach Files"><i
+                                class="fas fa-paperclip"></i></button>
+                        <input type="file" id="fileInput" style="display: none;" multiple
+                            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*">
+                        <input type="text" id="chatInput" class="chat-input"
+                            placeholder="Ask about materials, stock levels, or inventory..."
+                            data-i18n-placeholder="chat.placeholder" autocomplete="off">
+                        <button class="send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ── REQUESTS VIEW ────────────────────────────────── -->
+        <main class="main-content" id="view-requests" style="display:none;">
+            <div class="page-header"
+                style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+                <h2 data-i18n="req.title">Material Requests</h2>
+                <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+                    <div style="position:relative;">
+                        <div id="req-notifBell" title="Notifications"
+                            style="background:var(--bg-card);border:1px solid var(--border-color);width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.05rem;color:var(--text-secondary);transition:all 0.2s;">
+                            <i class="fas fa-bell"></i>
+                            <span id="req-notifBadge"
+                                style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:white;border-radius:50%;width:18px;height:18px;font-size:0.65rem;font-weight:700;display:none;align-items:center;justify-content:center;"></span>
+                        </div>
+                        <div id="req-notifPanel"
+                            style="position:absolute;right:0;top:calc(100% + 8px);width:320px;z-index:9999;background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;box-shadow:var(--shadow-md);display:none;overflow:hidden;">
+                            <div
+                                style="padding:0.9rem 1.2rem;font-weight:700;font-size:0.9rem;border-bottom:1px solid var(--border-color);">
+                                <i class="fas fa-bell"
+                                    style="color:var(--accent-color);margin-right:0.4rem"></i>Notifications
+                            </div>
+                            <div id="req-notifList" style="max-height:300px;overflow-y:auto;">
+                                <div
+                                    style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">
+                                    No notifications yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="exportRequestsPDF()"
+                        style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.55rem 1rem;border-radius:10px;border:1px solid rgba(239,68,68,0.25);background:rgba(239,68,68,0.08);color:#ef4444;font-size:0.8rem;font-weight:600;cursor:pointer;transition:all 0.2s;"
+                        onmouseover="this.style.background='#ef4444';this.style.color='white'"
+                        onmouseout="this.style.background='rgba(239,68,68,0.08)';this.style.color='#ef4444'"><i
+                            class="fas fa-file-pdf"></i> PDF</button>
+                    <button onclick="exportRequestsExcel()"
+                        style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.55rem 1rem;border-radius:10px;border:1px solid rgba(34,197,94,0.25);background:rgba(34,197,94,0.08);color:#22c55e;font-size:0.8rem;font-weight:600;cursor:pointer;transition:all 0.2s;"
+                        onmouseover="this.style.background='#22c55e';this.style.color='white'"
+                        onmouseout="this.style.background='rgba(34,197,94,0.08)';this.style.color='#22c55e'"><i
+                            class="fas fa-file-excel"></i> Excel</button>
+                    <button class="btn-primary" onclick="openNewRequestModal()"><i class="fas fa-plus"></i><span
+                            data-i18n="req.newRequest">New Request</span></button>
+                </div>
+            </div>
+            <div class="requests-list" id="requestsList"></div>
+
+            <!-- New Request Modal -->
+            <div id="newRequestModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Submit New Request</h3><button class="close-btn" onclick="closeNewRequestModal()"><i
+                                class="fas fa-times"></i></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group"><label><span data-i18n="req.selectMaterial">Select Material</span> <span
+                                    style="color:red">*</span></label><select id="reqMaterial"
+                                class="form-input"></select></div>
+                        <div class="form-group"><label for="reqQuantity">Quantity Needed <span
+                                    style="color:red">*</span></label>
+                            <div style="display:flex;gap:10px;align-items:center;"><input type="number" id="reqQuantity"
+                                    class="form-input" placeholder="1" step="1" style="flex:1;"><span id="unitDisplay"
+                                    style="font-weight:600;color:var(--text-secondary);min-width:50px;">-</span></div>
+                        </div>
+                        <div class="form-group"><label data-i18n="req.notes">Justification / Notes
+                                (Optional)</label><textarea id="reqNotes" class="form-input" rows="3"
+                                data-i18n-placeholder="req.notesPlaceholder"
+                                placeholder="e.g. For maintenance in Building C"></textarea></div>
+                    </div>
+                    <div class="modal-footer"><button class="btn-secondary" onclick="closeNewRequestModal()"
+                            data-i18n="req.discard">Discard</button><button class="btn-primary"
+                            onclick="submitRequest()"><i class="fas fa-paper-plane"></i> <span
+                                data-i18n="req.submit">Submit</span></button></div>
+                </div>
+            </div>
+            <!-- Rejection Modal -->
+            <div id="rejectionModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Reject Request</h3><button class="close-btn" onclick="closeRejectionModal()"><i
+                                class="fas fa-times"></i></button>
+                    </div>
+                    <div class="modal-body">
+                        <p id="rejectionTarget" style="color:var(--text-secondary);margin-bottom:1rem;font-weight:600;">
+                        </p>
+                        <div class="form-group"><label for="rejectReason">Reason for Rejection <span
+                                    style="color:red">*</span></label><textarea id="rejectReason" class="form-input"
+                                rows="3" placeholder="Explain why this request is being rejected..."></textarea></div>
+                    </div>
+                    <div class="modal-footer"><button class="btn-secondary"
+                            onclick="closeRejectionModal()">Cancel</button><button class="btn-primary"
+                            style="background-color:#ef4444;" onclick="submitRejection()">Reject Request</button></div>
+                </div>
+            </div>
+            <!-- Edit Request Modal -->
+            <div id="editModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Edit Request</h3><button class="close-btn" onclick="closeEditModal()"><i
+                                class="fas fa-times"></i></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group"><label>Material</label>
+                            <p id="editMaterialName" style="font-weight:700;color:var(--accent-color);"></p>
+                        </div>
+                        <div class="form-group"><label>Quantity Needed <span style="color:red">*</span></label><input
+                                type="number" id="editQuantity" class="form-input" step="1"></div>
+                        <div class="form-group"><label>Justification / Notes</label><textarea id="editNotes"
+                                class="form-input" rows="3"></textarea></div>
+                    </div>
+                    <div class="modal-footer"><button class="btn-secondary"
+                            onclick="closeEditModal()">Cancel</button><button class="btn-primary"
+                            onclick="updateRequest()">Save Changes</button></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ── ACCOUNT PROFILE VIEW ─────────────────────────── -->
+        <main class="main-content" id="view-profile" style="display:none;">
+            <div class="profile-container">
+                <div class="profile-header">
+                    <div class="profile-cover"></div>
+                    <div class="profile-info-header">
+                        <div class="profile-avatar" onclick="document.getElementById('avatarInput').click()"
+                            style="cursor:pointer;position:relative;">
+                            <img id="avatarImage" src="" alt=""
+                                style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:none;">
+                            <i id="avatarIcon" class="fas fa-user"></i>
+                            <div class="avatar-edit-overlay"><i class="fas fa-camera"></i></div>
+                        </div>
+                        <input type="file" id="avatarInput" style="display: none;" accept="image/*"
+                            onchange="handleAvatarUpload(event)">
+                        <div class="profile-text">
+                            <h1 id="displayName">User</h1>
+                            <input type="text" id="editName" class="edit-input" style="display: none;">
+                            <p id="displayRole">Role</p>
+                            <select id="editRole" class="edit-input"
+                                style="display: none; padding: 0.4rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-input); color: var(--text-primary); margin-top: 5px;">
+                                <option value="Engineer">Site Engineer</option>
+                                <option value="Warehouse">Warehouse Manager</option>
+                                <option value="Admin">Admin</option>
+                            </select>
+                        </div>
+                        <button class="edit-profile-btn" onclick="toggleEditMode()"><i class="fas fa-pen"></i> <span
+                                id="editBtnText" data-i18n="profile.editBtn">Edit Information</span></button>
+                    </div>
+                </div>
+                <div class="profile-grid">
+                    <div class="profile-card">
+                        <div class="card-header-actions">
+                            <h3><i class="fas fa-id-card"></i> <span data-i18n="profile.personal">Personal
+                                    Information</span></h3><button class="icon-btn" onclick="toggleEditMode()"
+                                title="Edit Information"><i class="fas fa-pen"></i></button>
+                        </div>
+                        <div class="info-group"><label data-i18n="profile.fullName">Full Name</label>
+                            <p id="displayFullName">User</p><input type="text" id="editFullName"
+                                class="edit-input full-width" style="display: none;">
+                        </div>
+                        <div class="info-group"><label data-i18n="profile.email">Email Address</label>
+                            <p id="displayEmail">email@example.com</p><input type="email" id="editEmail"
+                                class="edit-input full-width" style="display: none;">
+                        </div>
+                        <div id="cardSaveContainer" style="display:none;margin-top:1rem;text-align:right;"><button
+                                class="btn-primary" onclick="toggleEditMode()" data-i18n="profile.saveBtn">Save
+                                Changes</button></div>
+                    </div>
+                    <div class="profile-card">
+                        <h3><i class="fas fa-cog"></i> <span data-i18n="profile.settings">Account Settings</span></h3>
+                        <div class="setting-item">
+                            <div class="setting-info"><span data-i18n="profile.emailNotif">Email
+                                    Notifications</span><small data-i18n="profile.emailNotifSub">Receive updates on
+                                    stock levels</small></div><label class="switch"><input type="checkbox" checked><span
+                                    class="slider round"></span></label>
+                        </div>
+                        <div class="setting-item">
+                            <div class="setting-info"><span data-i18n="profile.twoFactor">Two-Factor
+                                    Authentication</span><small data-i18n="profile.twoFactorSub">Secure your
+                                    account</small></div><label class="switch"><input type="checkbox"><span
+                                    class="slider round"></span></label>
+                        </div>
+                        <div class="setting-actions"><button class="btn-outline" onclick="openPasswordModal()"
+                                data-i18n="profile.changePass">Change Password</button></div>
+                    </div>
+                    <div class="profile-card full-width">
+                        <h3><i class="fas fa-history"></i> <span data-i18n="profile.activity">Recent Activity</span>
+                        </h3>
+                        <div class="activity-list" id="activityList">
+                            <div class="activity-item"><i class="fas fa-spinner fa-spin"></i>
+                                <div>
+                                    <p>Loading activity...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Password Modal -->
+            <div id="passwordModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Change Password</h3><button class="close-btn" onclick="closePasswordModal()"><i
+                                class="fas fa-times"></i></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group"><label>Current Password</label><input type="password" class="form-input"
+                                placeholder="Enter current password"></div>
+                        <div class="form-group"><label>New Password</label><input type="password" class="form-input"
+                                placeholder="Enter new password"></div>
+                        <div class="form-group"><label>Confirm New Password</label><input type="password"
+                                class="form-input" placeholder="Confirm new password"></div>
+                    </div>
+                    <div class="modal-footer"><button class="btn-secondary"
+                            onclick="closePasswordModal()">Cancel</button><button class="btn-primary"
+                            onclick="savePassword()">Save Changes</button></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- External Libraries -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+    <!-- Main Script -->
+    <script src="script.js"></script>
+</body>
+
+</html>
