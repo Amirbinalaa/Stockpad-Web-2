@@ -34,10 +34,9 @@ class Command(BaseCommand):
 
                 site_a_response = submit_request_to_site_a(
                     material_id=req.material.site_a_material_id,
-                    requester_id=req.requested_by.id,
                     requester_email=req.requested_by.email,
                     quantity=req.quantity_needed,
-                    reason=req.justification or "",
+                    justification=req.justification or "",
                 )
 
                 req.site_a_request_id = site_a_response["id"]

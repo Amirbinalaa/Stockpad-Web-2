@@ -24,7 +24,7 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-from .site_a_client import submit_request_to_site_a, SiteAError
+from .site_a_client import submit_request_to_site_a, SiteAError, fetch_wm_catalog_for_engineer, check_engineer_status_on_wm
 
 logger = logging.getLogger('api')
 
@@ -382,6 +382,80 @@ class SiteAWebhookView(APIView):
 
         # Return 200 immediately so WM Website doesn't retry unnecessarily.
         return JsonResponse({"ok": True}, status=200)
+
+
+# ─────────────────────────────────────────────
+# WM SITE PROXY VIEWS  (Team Access Control Integration)
+# ─────────────────────────────────────────────
+
+class WMCatalogProxyView(APIView):
+    """
+    PE Backend proxy for the WM materials catalogue.
+
+    GET /api/wm/catalog/
+
+    Forwards the logged-in engineer’s email to the WM site so the WM server
+    can filter and return only the materials belonging to the Warehouse Manager
+    who has whitelisted this engineer.  The response is passed through verbatim
+    so the frontend receives the same structure as a direct WM call.
+
+    Using this backend proxy avoids browser CORS restrictions when the WM site
+    is on a different origin from the PE frontend.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        engineer_email = request.user.email
+        if not engineer_email:
+            return Response(
+                {'error': 'Engineer email not set on this account.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            materials = fetch_wm_catalog_for_engineer(engineer_email)
+            return Response(materials, status=status.HTTP_200_OK)
+        except SiteAError as exc:
+            logger.warning(f"[WM Catalog Proxy] WM error for {engineer_email}: {exc}")
+            return Response(
+                {'error': str(exc), 'source': 'wm_site'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as exc:
+            logger.error(f"[WM Catalog Proxy] Unexpected error: {exc}")
+            return Response(
+                {'error': 'Failed to reach the Warehouse Manager site.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+
+class WMEngineerStatusView(APIView):
+    """
+    PE Backend proxy for the WM engineer whitelist status check.
+
+    GET /api/wm/status/
+
+    Returns { "connected": bool, "manager_name": str|null } so the PE Profile
+    page can render the live connection badge without making a cross-origin
+    call from the browser.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        engineer_email = request.user.email
+        if not engineer_email:
+            return Response({'connected': False, 'manager_name': None})
+        try:
+            result = check_engineer_status_on_wm(engineer_email)
+            return Response(result, status=status.HTTP_200_OK)
+        except SiteAError as exc:
+            logger.warning(f"[WM Status Proxy] WM error for {engineer_email}: {exc}")
+            return Response(
+                {'connected': False, 'manager_name': None, 'error': str(exc)},
+                status=status.HTTP_200_OK,   # return 200 so the badge renders, not an error page
+            )
+        except Exception as exc:
+            logger.error(f"[WM Status Proxy] Unexpected error: {exc}")
+            return Response({'connected': False, 'manager_name': None})
 
 
 # ─────────────────────────────────────────────

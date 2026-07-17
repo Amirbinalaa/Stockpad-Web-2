@@ -22,6 +22,8 @@ from .views import (
     ProductionPlanViewSet, ProductionPlanItemViewSet, MaterialRequirementViewSet,
     # Procurement
     SupplierViewSet, ProcurementRequestViewSet, ProcurementOrderViewSet,
+    # WM Site Integration Proxies
+    WMCatalogProxyView, WMEngineerStatusView,
 )
 
 # ── Router (automatically generates list / detail / action URLs) ──────────────
@@ -61,6 +63,11 @@ urlpatterns = [
     path('inventory/summary/', InventorySummaryView.as_view(), name='inventory-summary'),
     path('analytics/dashboard/', DashboardAnalyticsView.as_view(), name='analytics-dashboard'),
     path('notifications/', NotificationsView.as_view(), name='notifications'),
+
+    # ── WM Site Proxies (Team Access Control integration) ──────────────────
+    # These routes forward the authenticated engineer’s email to the WM site.
+    path('wm/catalog/', WMCatalogProxyView.as_view(), name='wm-catalog-proxy'),
+    path('wm/status/', WMEngineerStatusView.as_view(), name='wm-engineer-status'),
 
     # ── Chatbot ───────────────────────────────────────────────────────────────
     path('chatbot/', ChatbotView.as_view(), name='chatbot'),

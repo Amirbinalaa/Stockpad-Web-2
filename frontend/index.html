@@ -557,6 +557,21 @@
                                     account</small></div><label class="switch"><input type="checkbox"><span
                                     class="slider round"></span></label>
                         </div>
+
+                        <!-- ── WM Live Connection Status Badge (Task 3) ─────────────── -->
+                        <div class="setting-item" id="wmConnectionRow" style="align-items:flex-start;gap:0.75rem;">
+                            <div class="setting-info">
+                                <span data-i18n="profile.wmConnection">WM Connection Status</span>
+                                <small data-i18n="profile.wmConnectionSub">Live link to your Warehouse Manager</small>
+                                <small id="wmConnectionManager" style="display:block;margin-top:2px;color:var(--text-muted);font-size:0.75rem;"></small>
+                            </div>
+                            <!-- Badge renders: checking → connected (green) | not-connected (red) -->
+                            <span id="wmConnectionBadge" class="wm-badge wm-badge--checking" title="WM Warehouse Manager connection status">
+                                <i class="fas fa-spinner fa-spin" id="wmBadgeIcon"></i>
+                                <span id="wmConnectionBadgeText" data-i18n="profile.wmChecking">Checking...</span>
+                            </span>
+                        </div>
+
                         <div class="setting-actions"><button class="btn-outline" onclick="openPasswordModal()"
                                 data-i18n="profile.changePass">Change Password</button></div>
                     </div>

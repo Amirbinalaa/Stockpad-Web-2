@@ -548,3 +548,78 @@ html[dir="rtl"] .login-container, html[dir="rtl"] .signup-container { direction:
 html[dir="rtl"] .login-container input, html[dir="rtl"] .signup-container input, html[dir="rtl"] .login-container select, html[dir="rtl"] .signup-container select { text-align: right; }
 @media (max-width: 768px) { html[dir="rtl"] .main-content { margin-right: 0; } }
 @media (max-width: 1024px) { html[dir="rtl"] .main-content { margin-right: 80px; margin-left: 0; } }
+
+/* ── WM Live Connection Status Badge ─────────────────────────── */
+.wm-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.4s, color 0.4s, border-color 0.4s, box-shadow 0.4s;
+}
+
+/* Checking / loading state */
+.wm-badge--checking {
+    background: rgba(107, 114, 128, 0.12);
+    color: #6b7280;
+    border: 1.5px solid rgba(107, 114, 128, 0.25);
+}
+
+/* Connected — vibrant green with subtle pulsing ring */
+.wm-badge--connected {
+    background: rgba(34, 197, 94, 0.12);
+    color: #15803d;
+    border: 1.5px solid rgba(34, 197, 94, 0.4);
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.08);
+    animation: wmBadgePulse 2.5s ease-in-out infinite;
+}
+.wm-badge--connected::before {
+    content: '';
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    flex-shrink: 0;
+    animation: wmDotBlink 1.6s ease-in-out infinite;
+}
+
+/* Not Connected — muted red */
+.wm-badge--disconnected {
+    background: rgba(239, 68, 68, 0.1);
+    color: #b91c1c;
+    border: 1.5px solid rgba(239, 68, 68, 0.3);
+}
+.wm-badge--disconnected::before {
+    content: '';
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+    flex-shrink: 0;
+}
+
+/* Remove FontAwesome spinner icon once state is resolved */
+.wm-badge--connected #wmBadgeIcon,
+.wm-badge--disconnected #wmBadgeIcon {
+    display: none;
+}
+
+@keyframes wmBadgePulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.08); }
+    50%       { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0.00); }
+}
+@keyframes wmDotBlink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.35; }
+}
+
+/* ── Catalog source banner animation ─────────────────────────── */
+@keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+

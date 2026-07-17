@@ -100,6 +100,11 @@ const i18n = {
         'profile.activity': { en: 'Recent Activity', ar: 'النشاط الأخير' },
         'profile.noActivity': { en: 'No recent activity', ar: 'لا يوجد نشاط أخير' },
         'profile.noActivitySub': { en: 'Start by making a material request', ar: 'ابدأ بتقديم طلبات المواد' },
+        'profile.wmConnection': { en: 'WM Connection Status', ar: 'حالة الاتصال بالمخزن' },
+        'profile.wmConnectionSub': { en: 'Live link to your Warehouse Manager', ar: 'اتصال مباشر بمدير المخزن' },
+        'profile.wmConnected': { en: 'Connected', ar: 'متصل' },
+        'profile.wmNotConnected': { en: 'Not Connected', ar: 'غير متصل' },
+        'profile.wmChecking': { en: 'Checking...', ar: 'جاري التحقق...' },
     },
     t(key) { const e = this.translations[key]; if (!e) return key; return e[this._lang] || e.en || key; },
     getLang() { return this._lang; },
@@ -123,6 +128,11 @@ const i18n = {
 // API
 // ══════════════════════════════════════════════════════════════
 const API_URL = 'http://127.0.0.1:8000/api';
+
+// ── WM (Warehouse Manager) Site Integration ───────────────────
+// Base URL for the remote WM website API. Change this to match
+// the deployed WM server address (same value as WM_WEBSITE_BASE_URL in settings.py).
+const WM_BASE_URL = 'https://stockpad-backend-production.up.railway.app';
 const api = {
     getToken: () => localStorage.getItem('access_token'),
     setToken: (access, refresh) => { localStorage.setItem('access_token', access); if (refresh) localStorage.setItem('refresh_token', refresh); },
@@ -153,7 +163,17 @@ const api = {
     },
     login: async (email, password, rememberMe = false) => {
         const data = await api.request('/auth/login/', 'POST', { username: email, password }, false);
-        if (data) { api.setToken(data.access, data.refresh); if (rememberMe) localStorage.setItem('remember_me', 'true'); else localStorage.removeItem('remember_me'); const user = await api.getMe(); localStorage.setItem('user_role', user.role); localStorage.setItem('username', user.username); localStorage.setItem('user_id', user.id); return user; }
+        if (data) {
+            api.setToken(data.access, data.refresh);
+            if (rememberMe) localStorage.setItem('remember_me', 'true'); else localStorage.removeItem('remember_me');
+            const user = await api.getMe();
+            localStorage.setItem('user_role', user.role);
+            localStorage.setItem('username', user.username);
+            localStorage.setItem('user_id', user.id);
+            // Persist email for WM integration calls (requester_email, catalog fetch, status check)
+            localStorage.setItem('user_email', user.email || email);
+            return user;
+        }
     },
     register: async (username, email, password, role) => api.request('/auth/register/', 'POST', { username, email, password, role }, false),
     googleLogin: async (credential) => {
@@ -162,16 +182,101 @@ const api = {
             api.setToken(data.access, data.refresh); 
             localStorage.setItem('user_role', data.user.role || 'engineer'); 
             localStorage.setItem('username', data.user.username); 
-            localStorage.setItem('user_id', data.user.id); 
+            localStorage.setItem('user_id', data.user.id);
+            // Persist email for WM integration calls
+            localStorage.setItem('user_email', data.user.email || '');
             return data.user; 
         }
     },
-    logout: async () => { const refresh = localStorage.getItem('refresh_token'); if (refresh) await api.request('/auth/logout/', 'POST', { refresh }).catch(() => {}); api.clearToken(); localStorage.removeItem('remember_me'); navigateTo('login'); },
+    logout: async () => { const refresh = localStorage.getItem('refresh_token'); if (refresh) await api.request('/auth/logout/', 'POST', { refresh }).catch(() => {}); api.clearToken(); localStorage.removeItem('remember_me'); localStorage.removeItem('user_email'); navigateTo('login'); },
     getMe: async () => { const user = await api.request('/auth/me/'); if (user && user.avatar && !user.avatar.startsWith('http')) user.avatar = `http://127.0.0.1:8000${user.avatar}`; return user; },
     updateProfile: async (payload) => api.request('/auth/me/', 'PATCH', payload),
     uploadAvatar: async (file) => { const fd = new FormData(); fd.append('avatar', file); return api.request('/auth/me/', 'PATCH', fd); },
     getMaterials: async (params = {}) => { let qs = ''; const keys = Object.keys(params).filter(k => params[k] !== 'all' && params[k] !== ''); if (keys.length > 0) qs = '?' + keys.map(k => `${k}=${encodeURIComponent(params[k])}`).join('&'); return api.request(`/materials/${qs}`); },
-    createRequest: async (materialId, quantity, notes) => api.request('/requests/', 'POST', { material: materialId, quantity_needed: quantity, justification: notes }),
+
+    /**
+     * Fetch the materials catalogue from the WM site asynchronously.
+     * Passes the engineer's email so the WM server returns only the
+     * materials belonging to the Warehouse Manager who whitelisted them.
+     * Falls back to local PE materials on network/auth errors.
+     *
+     * @param {string} engineerEmail — logged-in engineer's email address
+     * @returns {Promise<Array>} array of material objects
+     */
+    fetchWMCatalog: async (engineerEmail) => {
+        try {
+            const response = await fetch(
+                `${WM_BASE_URL}/api/inventory/materials/catalog/`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'X-Engineer-Email': engineerEmail,
+                        'X-Site-B-API-Key': 'stockpad-site-b-key', // must match WM server config
+                    },
+                    signal: AbortSignal.timeout(10000), // 10-second hard timeout
+                }
+            );
+            if (!response.ok) {
+                console.warn(`[WM Catalog] HTTP ${response.status} — falling back to local materials.`);
+                return null;
+            }
+            const data = await response.json();
+            return Array.isArray(data) ? data : (data.results || data.materials || []);
+        } catch (err) {
+            if (err.name === 'TimeoutError') {
+                console.warn('[WM Catalog] Request timed out — falling back to local materials.');
+            } else {
+                console.warn('[WM Catalog] Fetch error:', err.message, '— falling back to local materials.');
+            }
+            return null;
+        }
+    },
+
+    /**
+     * Check whether this engineer is whitelisted / active on the WM site.
+     * Returns { connected: boolean, manager: string|null }.
+     *
+     * @param {string} engineerEmail — logged-in engineer's email address
+     */
+    checkWMConnectionStatus: async (engineerEmail) => {
+        try {
+            const response = await fetch(
+                `${WM_BASE_URL}/api/inventory/engineer-status/?email=${encodeURIComponent(engineerEmail)}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'X-Engineer-Email': engineerEmail,
+                        'X-Site-B-API-Key': 'stockpad-site-b-key',
+                    },
+                    signal: AbortSignal.timeout(8000),
+                }
+            );
+            if (response.ok) {
+                const data = await response.json();
+                // WM API returns { active: true/false, manager_name: '...' }
+                return { connected: data.active === true, manager: data.manager_name || null };
+            }
+            // 403/404 → engineer is not whitelisted
+            return { connected: false, manager: null };
+        } catch (err) {
+            console.warn('[WM Status] Could not reach WM server:', err.message);
+            return { connected: false, manager: null, unreachable: true };
+        }
+    },
+
+    /**
+     * Submit a material request, explicitly embedding the requester's email
+     * for WM-side identity verification (Task 2).
+     */
+    createRequest: async (materialId, quantity, notes) => {
+        const requesterEmail = localStorage.getItem('user_email') || '';
+        return api.request('/requests/', 'POST', {
+            material: materialId,
+            quantity_needed: quantity,
+            justification: notes,
+            requester_email: requesterEmail,
+        });
+    },
     getMyRequests: async (status = null) => { let ep = '/requests/mine/'; if (status) ep += `?status=${status}`; return api.request(ep); },
     getAllRequests: async (status = null) => { let ep = '/requests/all/'; if (status) ep += `?status=${status}`; return api.request(ep); },
     approveRequest: async (id) => api.request(`/requests/${id}/approve/`, 'PATCH'),
@@ -470,12 +575,62 @@ function initInventory() {
     document.getElementById('modalSubmitBtn').addEventListener('click', submitInventoryRequest);
 }
 
+// ── WM catalog source indicator (set to true when live WM data is shown) ──
+let _wmCatalogActive = false;
+
 async function loadMaterials() {
-    try {
-        const data = await api.getMaterials();
-        allMaterials = Array.isArray(data) ? data : (data.results || []);
-        renderMaterials();
-    } catch(e) { console.error('Failed to load materials:', e); }
+    const engineerEmail = localStorage.getItem('user_email') || '';
+    let wmData = null;
+
+    // ── Task 1: Attempt async WM catalog fetch with the engineer's email ──
+    if (engineerEmail) {
+        wmData = await api.fetchWMCatalog(engineerEmail);
+    }
+
+    if (wmData && wmData.length > 0) {
+        // WM catalog loaded — use it exclusively so both sites mirror the same data.
+        allMaterials = wmData;
+        _wmCatalogActive = true;
+        _showCatalogSourceBanner(true);
+        console.info(`[WM Catalog] Loaded ${wmData.length} materials for ${engineerEmail} from WM site.`);
+    } else {
+        // Fall back to the local PE inventory (WM unreachable or engineer not whitelisted).
+        _wmCatalogActive = false;
+        _showCatalogSourceBanner(false);
+        try {
+            const data = await api.getMaterials();
+            allMaterials = Array.isArray(data) ? data : (data.results || []);
+        } catch(e) {
+            console.error('[Inventory] Failed to load local materials:', e);
+        }
+    }
+
+    renderMaterials();
+}
+
+/**
+ * Shows a subtle banner at the top of the inventory grid indicating whether
+ * the catalogue is sourced from the WM site or the local PE database.
+ */
+function _showCatalogSourceBanner(isWM) {
+    const grid = document.getElementById('productsGrid');
+    if (!grid) return;
+    const existing = document.getElementById('catalogSourceBanner');
+    if (existing) existing.remove();
+    const banner = document.createElement('div');
+    banner.id = 'catalogSourceBanner';
+    banner.style.cssText = [
+        'grid-column:1/-1', 'display:flex', 'align-items:center', 'gap:0.5rem',
+        `padding:0.55rem 1rem`, 'border-radius:10px', 'font-size:0.82rem', 'font-weight:600',
+        'margin-bottom:0.25rem', 'animation:fadeInDown 0.4s ease',
+        isWM
+            ? 'background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);color:#15803d;'
+            : 'background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.3);color:#92400e;'
+    ].join(';');
+    banner.innerHTML = isWM
+        ? `<i class="fas fa-link"></i> Showing live catalogue from your Warehouse Manager`
+        : `<i class="fas fa-database"></i> Showing local inventory (WM site not reachable)`;
+    grid.prepend(banner);
 }
 
 function renderMaterials() {
@@ -714,7 +869,13 @@ async function submitRequest() {
     const notes = document.getElementById('reqNotes').value;
     if (!matId) { api.showModal('Error', 'Please select a material.', true); return; }
     if (!qty || qty < 1) { api.showModal('Error', 'Please enter a valid quantity.', true); return; }
-    try { await api.createRequest(parseInt(matId), qty, notes); api.showModal('Success', 'Request submitted!'); closeNewRequestModal(); loadRequests(); } catch(e) { api.showModal('Error', e.message, true); }
+    // Task 2: api.createRequest now always includes requester_email from localStorage.
+    try {
+        await api.createRequest(parseInt(matId), qty, notes);
+        api.showModal('Success', 'Request submitted!');
+        closeNewRequestModal();
+        loadRequests();
+    } catch(e) { api.showModal('Error', e.message, true); }
 }
 async function approveReq(id) { try { await api.approveRequest(id); loadRequests(); } catch(e) { api.showModal('Error', e.message, true); } }
 function openRejectionModal(id, name) { currentRejectId = id; document.getElementById('rejectionTarget').textContent = name; document.getElementById('rejectReason').value = ''; document.getElementById('rejectionModal').style.display = 'flex'; }
@@ -759,7 +920,12 @@ function exportRequestsExcel() {
 // ══════════════════════════════════════════════════════════════
 let currentUserData = null;
 
-function initProfile() { loadProfile(); loadRecentActivity(); }
+function initProfile() {
+    loadProfile();
+    loadRecentActivity();
+    // Task 3: render the WM connection status badge asynchronously after profile loads.
+    loadWMConnectionStatus();
+}
 
 async function loadProfile() {
     try {
@@ -778,7 +944,51 @@ async function loadProfile() {
         document.getElementById('editEmail').value = currentUserData.email;
         const roleMapping = { 'engineer': 'Engineer', 'warehouse': 'Warehouse', 'admin': 'Admin' };
         document.getElementById('editRole').value = roleMapping[currentUserData.role.toLowerCase()] || 'Engineer';
+        // Ensure email is always persisted for WM integration (covers page-refresh scenarios)
+        localStorage.setItem('user_email', currentUserData.email);
     } catch(e) { console.error('Failed to load profile:', e); }
+}
+
+/**
+ * Task 3 — Async WM Connection Status Badge
+ * Hits the WM API with the engineer's email and renders a live
+ * green (Connected) or red (Not Connected) badge in the settings card.
+ */
+async function loadWMConnectionStatus() {
+    const badge = document.getElementById('wmConnectionBadge');
+    const badgeText = document.getElementById('wmConnectionBadgeText');
+    const badgeManager = document.getElementById('wmConnectionManager');
+    if (!badge || !badgeText) return; // badge element not yet in DOM
+
+    // Show "Checking..." pulse while waiting
+    badge.className = 'wm-badge wm-badge--checking';
+    badgeText.textContent = i18n.t('profile.wmChecking');
+    if (badgeManager) badgeManager.textContent = '';
+
+    const engineerEmail = localStorage.getItem('user_email') ||
+        (currentUserData ? currentUserData.email : '');
+
+    if (!engineerEmail) {
+        badge.className = 'wm-badge wm-badge--disconnected';
+        badgeText.textContent = i18n.t('profile.wmNotConnected');
+        return;
+    }
+
+    const result = await api.checkWMConnectionStatus(engineerEmail);
+
+    if (result.connected) {
+        badge.className = 'wm-badge wm-badge--connected';
+        badgeText.textContent = i18n.t('profile.wmConnected');
+        if (badgeManager && result.manager) {
+            badgeManager.textContent = `Manager: ${result.manager}`;
+        }
+    } else {
+        badge.className = 'wm-badge wm-badge--disconnected';
+        badgeText.textContent = i18n.t('profile.wmNotConnected');
+        if (badgeManager && result.unreachable) {
+            badgeManager.textContent = 'WM server unreachable';
+        }
+    }
 }
 
 async function handleAvatarUpload(event) {
