@@ -127,7 +127,10 @@ const i18n = {
 // ══════════════════════════════════════════════════════════════
 // API
 // ══════════════════════════════════════════════════════════════
-const API_URL = 'http://127.0.0.1:8000/api';
+const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:')
+    ? 'http://127.0.0.1:8000'
+    : window.location.origin;
+const API_URL = `${API_BASE}/api`;
 
 // ── WM (Warehouse Manager) Site Integration ───────────────────
 // Base URL for the remote WM website API. Change this to match
@@ -189,7 +192,7 @@ const api = {
         }
     },
     logout: async () => { const refresh = localStorage.getItem('refresh_token'); if (refresh) await api.request('/auth/logout/', 'POST', { refresh }).catch(() => {}); api.clearToken(); localStorage.removeItem('remember_me'); localStorage.removeItem('user_email'); navigateTo('login'); },
-    getMe: async () => { const user = await api.request('/auth/me/'); if (user && user.avatar && !user.avatar.startsWith('http')) user.avatar = `http://127.0.0.1:8000${user.avatar}`; return user; },
+    getMe: async () => { const user = await api.request('/auth/me/'); if (user && user.avatar && !user.avatar.startsWith('http')) user.avatar = `${API_BASE}${user.avatar}`; return user; },
     updateProfile: async (payload) => api.request('/auth/me/', 'PATCH', payload),
     uploadAvatar: async (file) => { const fd = new FormData(); fd.append('avatar', file); return api.request('/auth/me/', 'PATCH', fd); },
     getMaterials: async (params = {}) => { let qs = ''; const keys = Object.keys(params).filter(k => params[k] !== 'all' && params[k] !== ''); if (keys.length > 0) qs = '?' + keys.map(k => `${k}=${encodeURIComponent(params[k])}`).join('&'); return api.request(`/materials/${qs}`); },
@@ -938,7 +941,7 @@ async function loadProfile() {
         const img = document.getElementById('avatarImage');
         const icon = document.getElementById('avatarIcon');
         const avatar = currentUserData.avatar_url || currentUserData.avatar;
-        if (avatar) { let url = avatar; if (url.startsWith('/')) url = 'http://127.0.0.1:8000' + url; img.src = url; img.style.display = 'block'; icon.style.display = 'none'; }
+        if (avatar) { let url = avatar; if (url.startsWith('/')) url = API_BASE + url; img.src = url; img.style.display = 'block'; icon.style.display = 'none'; }
         document.getElementById('editName').value = currentUserData.username;
         document.getElementById('editFullName').value = nameDisplay;
         document.getElementById('editEmail').value = currentUserData.email;

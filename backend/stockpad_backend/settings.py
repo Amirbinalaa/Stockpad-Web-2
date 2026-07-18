@@ -87,14 +87,35 @@ TEMPLATES = [
 WSGI_APPLICATION = "stockpad_backend.wsgi.application"
 
 
-from django.core.exceptions import ImproperlyConfigured
+import urllib.parse
 
-db_password = os.environ.get("DB_PASSWORD")
+db_url = os.environ.get("DATABASE_URL")
+if db_url:
+    try:
+        url = urllib.parse.urlparse(db_url)
+        db_user = url.username
+        db_password = url.password
+        db_name = url.path.lstrip('/')
+        db_host = url.hostname
+        db_port = str(url.port or "5432")
+    except Exception:
+        db_name = "stockpad_db"
+        db_user = "postgres"
+        db_password = os.environ.get("DB_PASSWORD", "postgres")
+        db_host = "localhost"
+        db_port = "5432"
+else:
+    db_name = os.environ.get("DB_NAME", "stockpad_db")
+    db_user = os.environ.get("DB_USER", "postgres")
+    db_password = os.environ.get("DB_PASSWORD")
+    db_host = os.environ.get("DB_HOST", "localhost")
+    db_port = os.environ.get("DB_PORT", "5432")
+
 if not db_password:
     if DEBUG:
         db_password = "postgres"
     else:
-        raise ImproperlyConfigured("DB_PASSWORD environment variable is missing for production.")
+        raise ImproperlyConfigured("DB_PASSWORD or DATABASE_URL environment variable is missing for production.")
 
 import sys
 if "test" in sys.argv:
@@ -108,11 +129,11 @@ else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": "stockpad_db",        # <-- Your PostgreSQL database name
-            "USER": "postgres",           # <-- Your PostgreSQL username
+            "NAME": db_name,
+            "USER": db_user,
             "PASSWORD": db_password,
-            "HOST": "localhost",
-            "PORT": "5432",
+            "HOST": db_host,
+            "PORT": db_port,
         }
     }
 

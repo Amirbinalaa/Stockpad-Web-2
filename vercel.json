@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://stockpad-backend-production.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/media/:path*",
+      "destination": "https://stockpad-backend-production.up.railway.app/media/:path*"
+    },
+    {
+      "source": "/static/:path*",
+      "destination": "https://stockpad-backend-production.up.railway.app/static/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/frontend/$1"
+    }
+  ]
+}
