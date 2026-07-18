@@ -178,7 +178,7 @@ const api = {
             return user;
         }
     },
-    register: async (username, email, password, password2, role) => api.request('/auth/register/', 'POST', { username, email, password, password2: password, role }, false),
+    register: async (username, email, password, role) => api.request('/auth/register/', 'POST', { username, email, password, role }, false),
     googleLogin: async (credential) => {
         const data = await api.request('/auth/google/', 'POST', { credential }, false);
         if (data) {
@@ -208,29 +208,10 @@ const api = {
      */
     fetchWMCatalog: async (engineerEmail) => {
         try {
-            const response = await fetch(
-                `${WM_BASE_URL}/api/inventory/materials/catalog/`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'X-Engineer-Email': engineerEmail,
-                        'X-Site-B-API-Key': 'stockpad-site-b-key', // must match WM server config
-                    },
-                    signal: AbortSignal.timeout(10000), // 10-second hard timeout
-                }
-            );
-            if (!response.ok) {
-                console.warn(`[WM Catalog] HTTP ${response.status} — falling back to local materials.`);
-                return null;
-            }
-            const data = await response.json();
+            const data = await api.request('/wm/catalog/', 'GET', null, true);
             return Array.isArray(data) ? data : (data.results || data.materials || []);
         } catch (err) {
-            if (err.name === 'TimeoutError') {
-                console.warn('[WM Catalog] Request timed out — falling back to local materials.');
-            } else {
-                console.warn('[WM Catalog] Fetch error:', err.message, '— falling back to local materials.');
-            }
+            console.warn('[WM Catalog] Fetch error:', err.message, '— falling back to local materials.');
             return null;
         }
     },
@@ -243,26 +224,10 @@ const api = {
      */
     checkWMConnectionStatus: async (engineerEmail) => {
         try {
-            const response = await fetch(
-                `${WM_BASE_URL}/api/inventory/engineer-status/?email=${encodeURIComponent(engineerEmail)}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'X-Engineer-Email': engineerEmail,
-                        'X-Site-B-API-Key': 'stockpad-site-b-key',
-                    },
-                    signal: AbortSignal.timeout(8000),
-                }
-            );
-            if (response.ok) {
-                const data = await response.json();
-                // WM API returns { active: true/false, manager_name: '...' }
-                return { connected: data.active === true, manager: data.manager_name || null };
-            }
-            // 403/404 → engineer is not whitelisted
-            return { connected: false, manager: null };
+            const data = await api.request('/wm/status/', 'GET', null, true);
+            return { connected: data && data.connected === true, manager: (data && data.manager_name) || null };
         } catch (err) {
-            console.warn('[WM Status] Could not reach WM server:', err.message);
+            console.warn('[WM Status] Could not reach WM server via proxy:', err.message);
             return { connected: false, manager: null, unreachable: true };
         }
     },
@@ -788,7 +753,10 @@ async function loadConversation(id) {
     try {
         const data = await api.getConversationDetails(id);
         const msgs = data.messages || [];
-        msgs.forEach(m => { if (m.role === 'user') addUserMessage(m.content); else addBotMessage(m.content); });
+        msgs.forEach(m => {
+            if (m.message) addUserMessage(m.message);
+            if (m.reply) addBotMessage(m.reply);
+        });
     } catch(e) { addBotMessage('Failed to load conversation.'); }
 }
 async function deleteConv(id) {
@@ -1044,7 +1012,36 @@ async function loadRecentActivity() {
 
 function openPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }
 function closePasswordModal() { document.getElementById('passwordModal').style.display = 'none'; }
-async function savePassword() { api.showModal('Coming Soon', 'Password change functionality is being prioritized for the next release.'); closePasswordModal(); }
+async function savePassword() {
+    const oldPassword = document.getElementById('passModalCurrent').value;
+    const newPassword = document.getElementById('passModalNew').value;
+    const confirmPassword = document.getElementById('passModalConfirm').value;
+    if (!oldPassword || !newPassword || !confirmPassword) {
+        api.showModal('Error', 'Please fill in all fields.', true);
+        return;
+    }
+    if (newPassword !== confirmPassword) {
+        api.showModal('Error', 'New passwords do not match.', true);
+        return;
+    }
+    if (newPassword.length < 8) {
+        api.showModal('Error', 'Password must be at least 8 characters long.', true);
+        return;
+    }
+    try {
+        const result = await api.request('/auth/change-password/', 'POST', { old_password: oldPassword, new_password: newPassword });
+        if (result) {
+            api.showModal('Success', 'Password changed successfully!');
+            closePasswordModal();
+            // Clear inputs
+            document.getElementById('passModalCurrent').value = '';
+            document.getElementById('passModalNew').value = '';
+            document.getElementById('passModalConfirm').value = '';
+        }
+    } catch (e) {
+        api.showModal('Error', e.message, true);
+    }
+}
 
 // ══════════════════════════════════════════════════════════════
 // BOOTSTRAP — runs on page load

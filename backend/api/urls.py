@@ -65,6 +65,8 @@ urlpatterns = [
     path('notifications/', NotificationsView.as_view(), name='notifications'),
 
     # ── WM Site Proxies (Team Access Control integration) ──────────────────
+    # Verified alignment with script.js: frontend fetchWMCatalog and checkWMConnectionStatus
+    # are re-routed here to resolve browser CORS limitations on custom headers.
     # These routes forward the authenticated engineer’s email to the WM site.
     path('wm/catalog/', WMCatalogProxyView.as_view(), name='wm-catalog-proxy'),
     path('wm/status/', WMEngineerStatusView.as_view(), name='wm-engineer-status'),

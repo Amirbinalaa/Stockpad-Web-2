@@ -271,9 +271,3 @@ if not DEBUG:
             f"Production integration settings missing: {', '.join(missing_vars)}. "
             "Please configure these environment variables."
         )
-
-from corsheaders.defaults import default_headers
-
-CORS_ALLOW_HEADERS = list(default_headers) + [
-    'x-engineer-email',
-]
