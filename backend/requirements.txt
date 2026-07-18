@@ -20,7 +20,7 @@ grpcio-status==1.62.3
 idna==3.11
 numpy>=1.26.0
 openpyxl==3.1.5
-pandas==2.0.3
+pandas>=2.2.0
 pillow==10.4.0
 proto-plus==1.27.1
 protobuf==4.25.8
