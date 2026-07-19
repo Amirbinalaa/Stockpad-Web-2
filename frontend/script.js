@@ -127,12 +127,14 @@ const i18n = {
 // ══════════════════════════════════════════════════════════════
 // API
 // ══════════════════════════════════════════════════════════════
-const WM_BASE_URL = 'https://stockpad-backend-production.up.railway.app';
+//const WM_BASE_URL = 'https://stockpad-backend-production.up.railway.app'; editted------>
+const PE_BACKEND_URL = 'https://stockpad-web-2-production.up.railway.app';
 const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:')
     ? 'http://127.0.0.1:8000'
-    : WM_BASE_URL;
+    //: WM_BASE_URL;
+    : PE_BACKEND_URL;
 // All API routes are mounted under /api/ in the backend root urls.py.
-// e.g., /api/auth/login/, /api/wm/catalog/, /api/requests/mine/
+// e.g., /api/auth/login/, /api/wm/catalog/, /api/requests/mine/ editted------>
 const API_URL = `${API_BASE.replace(/\/+$/, '')}/api`;
 
 /**
