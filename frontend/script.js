@@ -131,9 +131,9 @@ const WM_BASE_URL = 'https://stockpad-backend-production.up.railway.app';
 const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:')
     ? 'http://127.0.0.1:8000'
     : WM_BASE_URL;
-// All API routes are now served at the root context (no /api/ prefix).
-// e.g., /auth/login/, /wm/catalog/, /requests/mine/
-const API_URL = API_BASE;
+// All API routes are mounted under /api/ in the backend root urls.py.
+// e.g., /api/auth/login/, /api/wm/catalog/, /api/requests/mine/
+const API_URL = `${API_BASE}/api`;
 
 // ── WM (Warehouse Manager) Site Integration ───────────────────
 // Base URL for the remote WM website API. Change this to match
@@ -196,9 +196,9 @@ const api = {
     logout: async () => { const refresh = localStorage.getItem('refresh_token'); if (refresh) await api.request('/auth/logout/', 'POST', { refresh }).catch(() => {}); api.clearToken(); localStorage.removeItem('remember_me'); localStorage.removeItem('user_email'); navigateTo('login'); },
     getMe: async () => { const user = await api.request('/auth/me/'); if (user && user.avatar && !user.avatar.startsWith('http')) user.avatar = `${API_BASE}${user.avatar}`; return user; },
     // UserMeView extends RetrieveUpdateAPIView — supports GET, PUT, PATCH.
-    // We use PATCH for partial profile updates (only changed fields sent).
-    updateProfile: async (payload) => api.request('/auth/me/', 'PATCH', payload),
-    uploadAvatar: async (file) => { const fd = new FormData(); fd.append('avatar', file); return api.request('/auth/me/', 'PATCH', fd); },
+    // We use PUT to perform updates to the user profile.
+    updateProfile: async (payload) => api.request('/auth/me/', 'PUT', payload),
+    uploadAvatar: async (file) => { const fd = new FormData(); fd.append('avatar', file); return api.request('/auth/me/', 'PUT', fd); },
     getMaterials: async (params = {}) => { let qs = ''; const keys = Object.keys(params).filter(k => params[k] !== 'all' && params[k] !== ''); if (keys.length > 0) qs = '?' + keys.map(k => `${k}=${encodeURIComponent(params[k])}`).join('&'); return api.request(`/materials/${qs}`); },
 
     /**
