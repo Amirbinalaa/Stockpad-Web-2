@@ -252,3 +252,31 @@ class SiteAIntegrationTests(APITestCase):
             headers={"X-Site-B-API-Key": "test-site-b-api-key"},
             timeout=10
         )
+
+
+class AuthLoginTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="stockpad27",
+            email="stockpad27@gmail.com",
+            password="test-password-123",
+        )
+        self.login_url = reverse("login")
+
+    def test_login_with_email_returns_jwt(self):
+        response = self.client.post(
+            self.login_url,
+            {"username": "stockpad27@gmail.com", "password": "test-password-123"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+
+    def test_login_with_invalid_password_returns_401(self):
+        response = self.client.post(
+            self.login_url,
+            {"username": "stockpad27@gmail.com", "password": "wrong-password"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

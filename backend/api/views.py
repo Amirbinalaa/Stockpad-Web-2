@@ -75,7 +75,7 @@ from .models import (
     ChatMessage, ChatConversation,
 )
 from .serializers import (
-    UserSerializer, RegisterSerializer,
+    UserSerializer, RegisterSerializer, EmailTokenObtainPairSerializer,
     MaterialSerializer, MaterialListSerializer, MaterialRequestSerializer,
     CategorySerializer, RequestStatusHistorySerializer,
     ProductSerializer, BOMItemSerializer, ProductionPlanSerializer,
@@ -94,6 +94,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 class LoginView(TokenObtainPairView):
     permission_classes = (permissions.AllowAny,)
+    serializer_class = EmailTokenObtainPairSerializer
 
 
 class RegisterView(generics.CreateAPIView):

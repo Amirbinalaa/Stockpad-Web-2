@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.db.utils import OperationalError
 from .models import (
     User, Profile, Category, Material, MaterialRequest,
     Product, BOMItem, ProductionPlan, ProductionPlanItem, MaterialRequirement,
@@ -29,6 +31,25 @@ class ChatConversationSerializer(serializers.ModelSerializer):
 # ─────────────────────────────────────────────
 # AUTH / USER
 # ─────────────────────────────────────────────
+
+class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """Accept email or username in the `username` field for JWT login."""
+
+    def validate(self, attrs):
+        username = (attrs.get(self.username_field) or "").strip()
+        password = attrs.get("password")
+        if not username or not password:
+            raise serializers.ValidationError("Email/username and password are required.")
+
+        try:
+            return super().validate(attrs)
+        except serializers.ValidationError:
+            raise
+        except OperationalError as exc:
+            raise serializers.ValidationError(
+                "Authentication service temporarily unavailable. Check database connectivity."
+            ) from exc
+
 
 class ProfileSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)

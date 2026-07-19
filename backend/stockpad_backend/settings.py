@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 import os
+import sys
+import urllib.parse
 from datetime import timedelta
 from django.core.exceptions import ImproperlyConfigured
 
@@ -19,14 +21,42 @@ from django.core.exceptions import ImproperlyConfigured
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _load_local_dotenv():
+    """Load backend/.env for local runs; production platforms inject vars directly."""
+    env_file = BASE_DIR / ".env"
+    if not env_file.exists():
+        return
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if key:
+            os.environ.setdefault(key, value)
+
+
+def _env(name, default=None):
+    """Read an environment variable, stripping accidental leading/trailing whitespace."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    value = value.strip()
+    return value if value else default
+
+
+_load_local_dotenv()
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DJANGO_DEBUG", "True").strip().lower() not in ("false", "0", "no")
+DEBUG = (_env("DJANGO_DEBUG", "True") or "True").lower() not in ("false", "0", "no")
 
 # SECURITY WARNING: keep the secret key used in production secret!
-_secret_key_env = os.environ.get("DJANGO_SECRET_KEY")
+_secret_key_env = _env("DJANGO_SECRET_KEY")
 if not _secret_key_env:
     if DEBUG:
         # Insecure fallback — ONLY acceptable for local development
@@ -88,37 +118,63 @@ TEMPLATES = [
 WSGI_APPLICATION = "stockpad_backend.wsgi.application"
 
 
-import urllib.parse
+def _parse_database_url(database_url):
+    url = urllib.parse.urlparse(database_url.strip())
+    if url.scheme not in ("postgres", "postgresql"):
+        raise ImproperlyConfigured(
+            f"DATABASE_URL must use postgres/postgresql scheme, got {url.scheme!r}."
+        )
 
-db_url = os.environ.get("DATABASE_URL")
+    query = urllib.parse.parse_qs(url.query)
+    sslmode = (query.get("sslmode") or ["require"])[0]
+
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": urllib.parse.unquote(url.path.lstrip("/")),
+        "USER": urllib.parse.unquote(url.username or ""),
+        "PASSWORD": urllib.parse.unquote(url.password or ""),
+        "HOST": url.hostname or "localhost",
+        "PORT": str(url.port or "5432"),
+        "CONN_MAX_AGE": 60,
+        "OPTIONS": {"sslmode": sslmode},
+    }
+
+
+db_url = _env("DATABASE_URL")
 if db_url:
     try:
-        url = urllib.parse.urlparse(db_url)
-        db_user = url.username
-        db_password = url.password
-        db_name = url.path.lstrip('/')
-        db_host = url.hostname
-        db_port = str(url.port or "5432")
-    except Exception:
-        db_name = "stockpad_db"
-        db_user = "postgres"
-        db_password = os.environ.get("DB_PASSWORD", "postgres")
-        db_host = "localhost"
-        db_port = "5432"
+        db_config = _parse_database_url(db_url)
+    except ImproperlyConfigured:
+        raise
+    except Exception as exc:
+        raise ImproperlyConfigured(f"Invalid DATABASE_URL: {exc}") from exc
 else:
-    db_name = os.environ.get("DB_NAME", "stockpad_db")
-    db_user = os.environ.get("DB_USER", "postgres")
-    db_password = os.environ.get("DB_PASSWORD")
-    db_host = os.environ.get("DB_HOST", "localhost")
-    db_port = os.environ.get("DB_PORT", "5432")
+    db_name = _env("DB_NAME", "stockpad_db")
+    db_user = _env("DB_USER", "postgres")
+    db_password = _env("DB_PASSWORD")
+    db_host = _env("DB_HOST", "localhost")
+    db_port = _env("DB_PORT", "5432")
 
-if not db_password:
-    if DEBUG:
-        db_password = "postgres"
-    else:
-        raise ImproperlyConfigured("DB_PASSWORD or DATABASE_URL environment variable is missing for production.")
+    if not db_password:
+        if DEBUG:
+            db_password = "postgres"
+        else:
+            raise ImproperlyConfigured(
+                "DB_PASSWORD or DATABASE_URL environment variable is missing for production."
+            )
 
-import sys
+    db_config = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": db_name,
+        "USER": db_user,
+        "PASSWORD": db_password,
+        "HOST": db_host,
+        "PORT": db_port,
+        "CONN_MAX_AGE": 60,
+    }
+    if db_host not in ("localhost", "127.0.0.1"):
+        db_config["OPTIONS"] = {"sslmode": "require"}
+
 if "test" in sys.argv:
     DATABASES = {
         "default": {
@@ -127,16 +183,7 @@ if "test" in sys.argv:
         }
     }
 else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": db_name,
-            "USER": db_user,
-            "PASSWORD": db_password,
-            "HOST": db_host,
-            "PORT": db_port,
-        }
-    }
+    DATABASES = {"default": db_config}
 
 
 # Password validation
@@ -226,30 +273,46 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'stockpad.eg@gmail.com')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')  # set via environment variable
-DEFAULT_FROM_EMAIL = os.environ.get('EMAIL_HOST_USER', 'stockpad.eg@gmail.com')
+EMAIL_HOST_USER = _env('EMAIL_HOST_USER', 'stockpad.eg@gmail.com')
+EMAIL_HOST_PASSWORD = _env('EMAIL_HOST_PASSWORD', '')  # set via environment variable
+DEFAULT_FROM_EMAIL = _env('EMAIL_HOST_USER', 'stockpad.eg@gmail.com')
 
 # Google OAuth Credentials
-GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
-GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+GOOGLE_CLIENT_ID = _env('GOOGLE_CLIENT_ID', '')
+GOOGLE_CLIENT_SECRET = _env('GOOGLE_CLIENT_SECRET', '')
 
 
 # ── Website 1 (WM Website) Integration Settings ──────────────────────────────
+PE_BACKEND_PUBLIC_URL = (
+    _env("PE_BACKEND_PUBLIC_URL")
+    or "https://stockpad-web-2-production.up.railway.app"
+).rstrip("/")
+
 # Primary env var names (task spec / new standard):
 WM_WEBSITE_BASE_URL = (
-    os.environ.get("WM_WEBSITE_BASE_URL")
-    or os.environ.get("SITE_A_BASE_URL", "https://stockpad-backend-production.up.railway.app")
-)
+    _env("WM_WEBSITE_BASE_URL")
+    or _env("SITE_A_BASE_URL")
+    or "https://stockpad-backend-production.up.railway.app"
+).rstrip("/")
 WM_WEBSITE_API_KEY = (
-    os.environ.get("WM_WEBSITE_API_KEY")
-    or os.environ.get("SITE_A_API_KEY")
+    _env("WM_WEBSITE_API_KEY")
+    or _env("SITE_A_API_KEY")
 )  # sent as X-Site-B-API-Key on all outbound calls to WM Website
 WEBHOOK_SHARED_SECRET = (
-    os.environ.get("WEBHOOK_SHARED_SECRET")
-    or os.environ.get("SITE_A_WEBHOOK_SECRET")
+    _env("WEBHOOK_SHARED_SECRET")
+    or _env("SITE_A_WEBHOOK_SECRET")
 )  # HMAC-SHA256 shared secret — used to verify X-Webhook-Signature on inbound webhooks
-SITE_B_PUBLIC_WEBHOOK_URL = os.environ.get("SITE_B_PUBLIC_WEBHOOK_URL")  # e.g. https://<this-domain>/api/webhooks/material-status/
+_site_b_webhook = _env("SITE_B_PUBLIC_WEBHOOK_URL")
+if _site_b_webhook:
+    _site_b_webhook = _site_b_webhook.rstrip("/")
+    if not _site_b_webhook.endswith("/api/webhooks/material-status"):
+        if _site_b_webhook.endswith("/api/webhooks/material-status/"):
+            pass
+        else:
+            _site_b_webhook = f"{_site_b_webhook}/api/webhooks/material-status"
+SITE_B_PUBLIC_WEBHOOK_URL = (
+    _site_b_webhook or f"{PE_BACKEND_PUBLIC_URL}/api/webhooks/material-status/"
+)
 
 # Backward-compat aliases — existing .env files using SITE_A_* continue to work
 SITE_A_BASE_URL       = WM_WEBSITE_BASE_URL
