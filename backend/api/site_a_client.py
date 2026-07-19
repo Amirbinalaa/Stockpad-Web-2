@@ -38,6 +38,7 @@ def fetch_wm_catalog_for_engineer(engineer_email: str) -> list:
         SiteAError: if the WM site returns a non-2xx response.
         requests.exceptions.RequestException: on network-level failures.
     """
+    engineer_email = engineer_email.lower().strip()
     resp = requests.get(
         f"{settings.WM_WEBSITE_BASE_URL}/api/inventory/materials/catalog/",
         headers={
@@ -47,8 +48,9 @@ def fetch_wm_catalog_for_engineer(engineer_email: str) -> list:
         timeout=10,
     )
     if not resp.ok:
+        # Surface the exact WM response body so the proxy can relay it for debugging.
         raise SiteAError(
-            f"WM catalog returned HTTP {resp.status_code} for engineer {engineer_email}."
+            f"WM catalog HTTP {resp.status_code} for {engineer_email}: {resp.text[:500]}"
         )
     data = resp.json()
     # Handle both plain list and paginated {"results": [...]} shapes.
@@ -72,6 +74,7 @@ def check_engineer_status_on_wm(engineer_email: str) -> dict:
         dict with keys "connected" (bool) and "manager_name" (str or None).
         Never raises — failures are silently mapped to {"connected": False, ...}.
     """
+    engineer_email = engineer_email.lower().strip()
     try:
         resp = requests.get(
             f"{settings.WM_WEBSITE_BASE_URL}/api/inventory/engineer-status/",

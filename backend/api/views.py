@@ -405,7 +405,7 @@ class WMCatalogProxyView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        engineer_email = request.user.email
+        engineer_email = (request.user.email or '').lower().strip()
         if not engineer_email:
             return Response(
                 {'error': 'Engineer email not set on this account.'},
@@ -421,10 +421,10 @@ class WMCatalogProxyView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         except Exception as exc:
-            logger.error(f"[WM Catalog Proxy] Unexpected error: {exc}")
+            logger.error(f"[WM Catalog Proxy] Unexpected error: {exc}", exc_info=True)
             return Response(
-                {'error': 'Failed to reach the Warehouse Manager site.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                {'error': f'Unexpected error reaching WM site: {exc}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -441,7 +441,7 @@ class WMEngineerStatusView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        engineer_email = request.user.email
+        engineer_email = (request.user.email or '').lower().strip()
         if not engineer_email:
             return Response({'connected': False, 'manager_name': None})
         try:
@@ -454,8 +454,8 @@ class WMEngineerStatusView(APIView):
                 status=status.HTTP_200_OK,   # return 200 so the badge renders, not an error page
             )
         except Exception as exc:
-            logger.error(f"[WM Status Proxy] Unexpected error: {exc}")
-            return Response({'connected': False, 'manager_name': None})
+            logger.error(f"[WM Status Proxy] Unexpected error: {exc}", exc_info=True)
+            return Response({'connected': False, 'manager_name': None, 'error': str(exc)})
 
 
 # ─────────────────────────────────────────────
