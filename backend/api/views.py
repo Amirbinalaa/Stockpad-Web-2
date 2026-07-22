@@ -894,13 +894,63 @@ class ChatbotView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
 
-    def _build_inventory_context(self):
-        """Build a compact markdown table of current inventory."""
+    def _infer_category(self, name: str) -> str:
+        """Infer a friendly category from material name keywords."""
+        n = (name or '').lower()
+        if any(kw in n for kw in ['cement', 'concrete', 'sand', 'brick', 'mortar', 'aggregate']):
+            return 'Building Materials'
+        if any(kw in n for kw in ['iron', 'steel', 'rod', 'rebar', 'metal', 'bar', 'beam']):
+            return 'Steel & Metal'
+        if any(kw in n for kw in ['paint', 'primer', 'coat', 'varnish', 'coating']):
+            return 'Paints'
+        if any(kw in n for kw in ['finish', 'tile', 'plaster', 'gypsum', 'ceramic']):
+            return 'Finishing'
+        if any(kw in n for kw in ['plumb', 'pipe', 'valve', 'fitting', 'pvc', 'drain']):
+            return 'Plumbing'
+        if any(kw in n for kw in ['electric', 'wire', 'cable', 'switch', 'conduit', 'breaker']):
+            return 'Electrical'
+        return 'Others'
+
+    def _build_inventory_context(self, user=None):
+        """Build a compact markdown table of inventory scoped to the engineer's WM catalog."""
+        # Attempt to fetch engineer-scoped WM catalog first
+        wm_items = []
+        if user and getattr(user, 'email', None):
+            try:
+                wm_items = fetch_wm_catalog_for_engineer(user.email.lower().strip())
+            except Exception:
+                wm_items = []
+
+        if wm_items:
+            lines = ["| Material | Category | Quantity | Unit | Status |",
+                     "|---|---|---|---|---|"]
+            for item in wm_items:
+                name = item.get('name', 'Unknown')
+                cat_raw = item.get('category_name') or item.get('category') or ''
+                if isinstance(cat_raw, dict):
+                    cat_raw = cat_raw.get('name', '')
+                cat = str(cat_raw).strip()
+                if not cat or cat.lower() in ('uncategorized', 'general', ''):
+                    cat = self._infer_category(name)
+                qty = item.get('quantity_available') or item.get('quantity', 0)
+                unit = item.get('unit', 'Units')
+                raw_status = item.get('status') or item.get('stock_status', '')
+                status_map = {
+                    'in_stock': 'In Stock', 'out_of_stock': 'Out of Stock',
+                    'low_stock': 'Low Stock', 'on_order': 'On Order',
+                }
+                status = status_map.get(str(raw_status).lower().replace(' ', '_'), raw_status or 'In Stock')
+                lines.append(f"| {name} | {cat} | {qty} | {unit} | {status} |")
+            return "\n".join(lines)
+
+        # Fall back to all local PE materials
         materials = Material.objects.select_related('category').all()
         lines = ["| Material | Category | Quantity | Unit | Status | Unit Cost |",
                  "|---|---|---|---|---|---|"]
         for m in materials:
-            cat_name = m.category.name if m.category else "Uncategorized"
+            cat_name = (m.category.name if m.category else '').strip()
+            if not cat_name or cat_name.lower() in ('uncategorized', 'general'):
+                cat_name = self._infer_category(m.name)
             lines.append(
                 f"| {m.name} | {cat_name} | {m.quantity_available} | {m.unit} "
                 f"| {m.status} | {m.unit_cost} |"
@@ -930,7 +980,7 @@ class ChatbotView(APIView):
 
             # 3. Initialize Bot
             bot = InventoryChatBot(api_key=GEMINI_API_KEY)
-            bot.inventory_data = self._build_inventory_context()
+            bot.inventory_data = self._build_inventory_context(user=request.user)
             
             # 4. Handle Files
             uploaded_files = request.FILES.getlist('files')

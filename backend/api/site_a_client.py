@@ -67,6 +67,11 @@ def check_engineer_status_on_wm(engineer_email: str) -> dict:
 
         {"connected": bool, "manager_name": str | None}
 
+    Inspects several possible response keys (active, connected, is_active,
+    is_connected, status, exists) so the badge works regardless of the WM
+    API version.  As a final fallback, attempts a catalog fetch: if materials
+    are returned, the engineer is considered connected.
+
     Args:
         engineer_email: The PE engineer's email address.
 
@@ -87,15 +92,38 @@ def check_engineer_status_on_wm(engineer_email: str) -> dict:
         )
         if resp.ok:
             data = resp.json()
-            # WM API is expected to return { "active": true, "manager_name": "..." }
-            return {
-                "connected": bool(data.get("active", False)),
-                "manager_name": data.get("manager_name") or data.get("manager") or None,
-            }
+            # Support multiple possible WM API response shapes
+            is_connected = (
+                data.get("active")
+                or data.get("connected")
+                or data.get("is_active")
+                or data.get("is_connected")
+                or data.get("exists")
+                or str(data.get("status", "")).lower() in ("active", "connected", "whitelisted", "approved")
+            )
+            manager = (
+                data.get("manager_name")
+                or data.get("manager")
+                or data.get("warehouse_manager")
+                or None
+            )
+            return {"connected": bool(is_connected), "manager_name": manager}
         # 404 = not found/not whitelisted; 403 = forbidden.
-        return {"connected": False, "manager_name": None}
+        if resp.status_code in (404, 403):
+            return {"connected": False, "manager_name": None}
+        # For other non-2xx responses, fall through to catalog fallback below.
     except requests.exceptions.RequestException:
-        return {"connected": False, "manager_name": None}
+        pass
+
+    # Catalog fallback: if the WM site returns materials, engineer is connected.
+    try:
+        items = fetch_wm_catalog_for_engineer(engineer_email)
+        if items:
+            return {"connected": True, "manager_name": None}
+    except Exception:
+        pass
+
+    return {"connected": False, "manager_name": None}
 
 
 def submit_request_to_site_a(

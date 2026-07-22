@@ -74,6 +74,8 @@ const i18n = {
         'req.requestedQty': { en: 'Requested Quantity', ar: 'الكمية المطلوبة' },
         'req.requestedBy': { en: 'Requested By', ar: 'مقدم الطلب' },
         'req.requestDate': { en: 'Request Date', ar: 'تاريخ الطلب' },
+        'req.notesPlaceholder': { en: 'e.g. For maintenance in Building C', ar: 'مثال: للصيانة في المبنى ج' },
+        'req.you': { en: '(You)', ar: '(أنت)' },
         'chat.title': { en: 'Inventory Assistant Chat Bot', ar: 'المساعد الذكي للمخزون' },
         'chat.welcome': { en: "Hello! I'm your **live inventory assistant**. I have real-time access to the StockPad database. Ask me anything about stock levels, materials, quantities, or status!", ar: "مرحباً! أنا **مساعدك الشخصي لجرد المخزون**. لدي وصول مباشر لقاعدة بيانات ستوك باد. اسألني عن أي شيء يتعلق بمستويات المخزون، المواد، الكميات أو الحالة!" },
         'chat.placeholder': { en: 'Ask about materials, stock levels, or inventory...', ar: 'اسأل عن المواد، مستويات المخزون...' },
@@ -632,19 +634,46 @@ function _showCatalogSourceBanner(isWM) {
     grid.prepend(banner);
 }
 
+// Maps material name keywords to a friendly display category name
+const _KEYWORD_CATEGORY_DISPLAY = [
+    { keywords: ['cement', 'concrete', 'sand', 'brick', 'mortar', 'aggregate'], display: 'Building Materials', group: 'building' },
+    { keywords: ['iron', 'steel', 'rod', 'rebar', 'metal', 'bar', 'beam'], display: 'Steel & Metal', group: 'steel' },
+    { keywords: ['paint', 'primer', 'coat', 'varnish', 'coating'], display: 'Paints', group: 'paint' },
+    { keywords: ['finish', 'tile', 'plaster', 'gypsum', 'ceramic'], display: 'Finishing', group: 'finishing' },
+    { keywords: ['plumb', 'pipe', 'valve', 'fitting', 'pvc', 'drain'], display: 'Plumbing', group: 'plumbing' },
+    { keywords: ['electric', 'wire', 'cable', 'switch', 'conduit', 'breaker'], display: 'Electrical', group: 'electrical' },
+];
+
 function _getMaterialCategoryName(m) {
     let cat = m.category_name || (typeof m.category === 'object' ? m.category?.name : m.category) || '';
-    return (typeof cat === 'string' ? cat : '').trim();
+    cat = (typeof cat === 'string' ? cat : '').trim();
+    // If missing or explicitly uncategorized, infer from material name
+    if (!cat || cat.toLowerCase() === 'uncategorized' || cat.toLowerCase() === 'general') {
+        const matName = (m.name || '').toLowerCase();
+        for (const rule of _KEYWORD_CATEGORY_DISPLAY) {
+            if (rule.keywords.some(kw => matName.includes(kw))) return rule.display;
+        }
+        return 'Others';
+    }
+    return cat;
 }
 
 function _getMaterialCategoryGroup(m) {
-    const name = _getMaterialCategoryName(m).toLowerCase();
-    if (name.includes('building')) return 'building';
-    if (name.includes('steel') || name.includes('metal')) return 'steel';
-    if (name.includes('paint')) return 'paint';
-    if (name.includes('finish')) return 'finishing';
-    if (name.includes('plumb') || name.includes('pipe')) return 'plumbing';
-    if (name.includes('electric') || name.includes('wire') || name.includes('cable')) return 'electrical';
+    // First check category name against known groups
+    const catName = (m.category_name || (typeof m.category === 'object' ? m.category?.name : m.category) || '').toLowerCase().trim();
+    if (catName && catName !== 'uncategorized' && catName !== 'general' && catName !== 'others') {
+        if (catName.includes('building') || catName.includes('civil')) return 'building';
+        if (catName.includes('steel') || catName.includes('metal') || catName.includes('iron')) return 'steel';
+        if (catName.includes('paint')) return 'paint';
+        if (catName.includes('finish') || catName.includes('tile')) return 'finishing';
+        if (catName.includes('plumb') || catName.includes('pipe')) return 'plumbing';
+        if (catName.includes('electric') || catName.includes('wire') || catName.includes('cable')) return 'electrical';
+    }
+    // Keyword-infer from material name
+    const matName = (m.name || '').toLowerCase();
+    for (const rule of _KEYWORD_CATEGORY_DISPLAY) {
+        if (rule.keywords.some(kw => matName.includes(kw))) return rule.group;
+    }
     return 'others';
 }
 
@@ -792,7 +821,7 @@ async function sendChatMessage() {
         const result = await api.chat(msg, filesToSend, chatConversationId);
         if (result.conversation_id) chatConversationId = result.conversation_id;
         document.getElementById('typing-indicator')?.remove();
-        addBotMessage(result.response || result.message || 'No response');
+        addBotMessage(result.reply || result.response || result.message || 'Sorry, I could not generate a response. Please try again.');
     } catch(e) {
         document.getElementById('typing-indicator')?.remove();
         addBotMessage('Sorry, I encountered an error. Please try again.');
@@ -856,18 +885,39 @@ function initRequests() {
 
 async function loadMaterialsForSelect() {
     try {
-        const data = await api.getMaterials();
-        const materials = Array.isArray(data) ? data : (data.results || []);
+        // Prefer WM-catalog materials (engineer-scoped); fall back to local materials
+        let materials = allMaterials && allMaterials.length > 0 ? allMaterials : null;
+        if (!materials) {
+            const engineerEmail = localStorage.getItem('user_email') || '';
+            if (engineerEmail) {
+                const wmData = await api.fetchWMCatalog(engineerEmail);
+                materials = (wmData && wmData.length > 0) ? wmData : null;
+            }
+        }
+        if (!materials) {
+            const data = await api.getMaterials();
+            materials = Array.isArray(data) ? data : (data.results || []);
+        }
         const select = document.getElementById('reqMaterial');
-        select.innerHTML = '<option value="">-- Select --</option>' + materials.map(m => `<option value="${m.id}" data-unit="${m.unit || 'Units'}">${m.name}</option>`).join('');
+        select.innerHTML = '<option value="">-- Select --</option>' + materials.map(m => {
+            const siteAId = m.site_a_material_id || m.id;
+            const unit = m.unit || 'Units';
+            const escapedName = (m.name || '').replace(/"/g, '&quot;');
+            return `<option value="${m.id}" data-site-a-id="${siteAId}" data-unit="${unit}" data-name="${escapedName}">${m.name}</option>`;
+        }).join('');
         if (typeof $ !== 'undefined' && $.fn.select2) {
             $(select).select2({ dropdownParent: document.getElementById('newRequestModal'), placeholder: i18n.t('req.selectMaterial'), allowClear: true });
             $(select).on('change', function() {
                 const opt = this.options[this.selectedIndex];
                 document.getElementById('unitDisplay').textContent = opt?.dataset?.unit || '-';
             });
+        } else {
+            select.addEventListener('change', function() {
+                const opt = this.options[this.selectedIndex];
+                document.getElementById('unitDisplay').textContent = opt?.dataset?.unit || '-';
+            });
         }
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error('[loadMaterialsForSelect]', e); }
 }
 
 async function loadRequests() {
@@ -914,14 +964,22 @@ function renderRequests(requests, isManager) {
 function openNewRequestModal() { document.getElementById('newRequestModal').style.display = 'flex'; }
 function closeNewRequestModal() { document.getElementById('newRequestModal').style.display = 'none'; }
 async function submitRequest() {
-    const matId = document.getElementById('reqMaterial').value;
+    const selectEl = document.getElementById('reqMaterial');
+    const matId = selectEl.value;
     const qty = parseInt(document.getElementById('reqQuantity').value);
     const notes = document.getElementById('reqNotes').value;
     if (!matId) { api.showModal('Error', 'Please select a material.', true); return; }
     if (!qty || qty < 1) { api.showModal('Error', 'Please enter a valid quantity.', true); return; }
-    // Task 2: api.createRequest now always includes requester_email from localStorage.
     try {
-        await api.createRequest(parseInt(matId), qty, notes);
+        const selectedOpt = selectEl.options[selectEl.selectedIndex];
+        const siteAId = selectedOpt?.dataset?.siteAId || selectedOpt?.dataset?.site_a_id || matId;
+        const matName = selectedOpt?.dataset?.name || selectedOpt?.textContent || '';
+        const unit = selectedOpt?.dataset?.unit || 'Units';
+        await api.createRequest(parseInt(matId), qty, notes, {
+            site_a_material_id: siteAId,
+            material_name: matName,
+            unit: unit,
+        });
         api.showModal('Success', 'Request submitted!');
         closeNewRequestModal();
         loadRequests();
