@@ -59,6 +59,7 @@ const i18n = {
         'inv.finishing': { en: 'Finishing', ar: 'تشطيبات' },
         'inv.plumbing': { en: 'Plumbing', ar: 'سباكة' },
         'inv.electrical': { en: 'Electrical', ar: 'كهرباء' },
+        'inv.others': { en: 'Others', ar: 'أخرى' },
         'req.title': { en: 'Material Requests', ar: 'طلبات المواد' },
         'req.newRequest': { en: 'New Request', ar: 'طلب جديد' },
         'req.selectMaterial': { en: 'Select Material', ar: 'اختر المادة' },
@@ -263,10 +264,13 @@ const api = {
      * Submit a material request, explicitly embedding the requester's email
      * for WM-side identity verification (Task 2).
      */
-    createRequest: async (materialId, quantity, notes) => {
+    createRequest: async (materialId, quantity, notes, extra = {}) => {
         const requesterEmail = localStorage.getItem('user_email') || '';
         return api.request('/requests/', 'POST', {
             material: materialId,
+            site_a_material_id: extra.site_a_material_id || materialId,
+            material_name: extra.material_name || '',
+            unit: extra.unit || 'Units',
             quantity_needed: quantity,
             justification: notes,
             requester_email: requesterEmail,
@@ -628,28 +632,69 @@ function _showCatalogSourceBanner(isWM) {
     grid.prepend(banner);
 }
 
+function _getMaterialCategoryName(m) {
+    let cat = m.category_name || (typeof m.category === 'object' ? m.category?.name : m.category) || '';
+    return (typeof cat === 'string' ? cat : '').trim();
+}
+
+function _getMaterialCategoryGroup(m) {
+    const name = _getMaterialCategoryName(m).toLowerCase();
+    if (name.includes('building')) return 'building';
+    if (name.includes('steel') || name.includes('metal')) return 'steel';
+    if (name.includes('paint')) return 'paint';
+    if (name.includes('finish')) return 'finishing';
+    if (name.includes('plumb') || name.includes('pipe')) return 'plumbing';
+    if (name.includes('electric') || name.includes('wire') || name.includes('cable')) return 'electrical';
+    return 'others';
+}
+
 function renderMaterials() {
     const grid = document.getElementById('productsGrid');
     const searchVal = (document.getElementById('inventorySearch')?.value || '').toLowerCase();
     let filtered = allMaterials;
-    if (selectedCategory !== 'all') filtered = filtered.filter(m => (m.category_name || m.category || '').toLowerCase().includes(selectedCategory));
+    if (selectedCategory !== 'all') {
+        filtered = filtered.filter(m => _getMaterialCategoryGroup(m) === selectedCategory);
+    }
     if (searchVal) filtered = filtered.filter(m => m.name.toLowerCase().includes(searchVal));
     grid.innerHTML = filtered.map((m, i) => {
-        const statusClass = m.stock_status === 'out_of_stock' ? 'Out of Stock' : (m.stock_status === 'low_stock' ? 'Low Stock' : 'In Stock');
-        const lastUpdated = m.last_updated ? new Date(m.last_updated).toLocaleDateString() : '-';
+        const rawStatus = m.status || m.stock_status || '';
+        let displayStatus = rawStatus;
+        if (!displayStatus) {
+            const qtyNum = Number(m.quantity ?? m.quantity_available ?? 0);
+            displayStatus = qtyNum > 0 ? 'In Stock' : 'Out of Stock';
+        } else if (displayStatus === 'out_of_stock') {
+            displayStatus = 'Out of Stock';
+        } else if (displayStatus === 'low_stock') {
+            displayStatus = 'Low Stock';
+        } else if (displayStatus === 'in_stock') {
+            displayStatus = 'In Stock';
+        } else if (displayStatus === 'on_order') {
+            displayStatus = 'On Order';
+        }
+
+        const qtyVal = m.quantity ?? m.quantity_available ?? 0;
+        const unitVal = m.unit || '';
+        const catDisplayName = _getMaterialCategoryName(m) || 'Uncategorized';
+        const escapedName = (m.name || '').replace(/'/g, "\\'");
+        const escapedUnit = unitVal.replace(/'/g, "\\'");
+        const siteAId = m.site_a_material_id || m.id;
+
         return `<div class="product-card animate-in" style="animation-delay:${i*0.03}s">
-            <div class="card-header"><h3 class="product-name">${m.name}</h3><span class="stock-badge">${statusClass}</span></div>
-            <div class="card-body"><p class="product-category">${m.category_name || m.category || ''}</p>
-            <div class="stock-text-container"><span class="stock-qty">${m.quantity} ${m.unit || ''}</span><span class="stock-date">Updated: ${lastUpdated}</span></div></div>
-            <div class="card-footer"><button class="request-btn" onclick="openRequestModal(${m.id}, '${m.name.replace(/'/g, "\\'")}', '${m.unit || 'Units'}')">${i18n.t('inv.request') || 'Request'}</button></div>
+            <div class="card-header"><h3 class="product-name">${m.name}</h3><span class="stock-badge">${displayStatus}</span></div>
+            <div class="card-body"><p class="product-category">${catDisplayName}</p>
+            <div class="stock-text-container"><span class="stock-qty">${qtyVal} ${unitVal}</span></div></div>
+            <div class="card-footer"><button class="request-btn" onclick="openRequestModal(${m.id}, '${escapedName}', '${escapedUnit}', ${siteAId})">Request</button></div>
         </div>`;
     }).join('');
     if (filtered.length === 0) grid.innerHTML = '<p style="text-align:center;color:var(--text-muted);grid-column:1/-1;padding:3rem;">No materials found.</p>';
 }
 
 let currentModalMaterial = null;
-function openRequestModal(id, name, unit) {
+let currentModalMaterialObj = null;
+
+function openRequestModal(id, name, unit, siteAId) {
     currentModalMaterial = id;
+    currentModalMaterialObj = allMaterials.find(x => x.id === id) || { id, name, unit, site_a_material_id: siteAId || id };
     document.getElementById('modalMaterialName').textContent = name;
     document.getElementById('modalUnitText').textContent = unit;
     document.getElementById('modalQtyInput').value = '';
@@ -662,7 +707,14 @@ async function submitInventoryRequest() {
     const notes = document.getElementById('modalNotesInput').value;
     if (!qty || qty < 1) { api.showModal('Error', 'Please enter a valid quantity.', true); return; }
     try {
-        await api.createRequest(currentModalMaterial, qty, notes);
+        const mat = currentModalMaterialObj || {};
+        const matId = mat.id || currentModalMaterial;
+        const siteAId = mat.site_a_material_id || mat.id || currentModalMaterial;
+        await api.createRequest(matId, qty, notes, {
+            site_a_material_id: siteAId,
+            material_name: mat.name || '',
+            unit: mat.unit || 'Units'
+        });
         api.showModal('Success', 'Request submitted successfully!');
         closeRequestModal();
     } catch(e) { api.showModal('Error', e.message, true); }

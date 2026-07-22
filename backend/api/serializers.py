@@ -186,11 +186,63 @@ class MaterialSerializer(serializers.ModelSerializer):
         return value
 
 
-# ─────────────────────────────────────────────
-# MATERIAL REQUESTS
-# ─────────────────────────────────────────────
+class FlexibleMaterialPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
+    """
+    PrimaryKeyRelatedField for Material that accepts:
+    1. Local Material PK (id)
+    2. Remote WM Material PK (site_a_material_id)
+    3. Auto-creates local Material row if site_a_material_id is provided but not yet in DB.
+    """
+    def to_internal_value(self, data):
+        # 1. Standard PK lookup in local Material table
+        try:
+            return super().to_internal_value(data)
+        except serializers.ValidationError:
+            pass
+
+        # 2. Check site_a_material_id lookup
+        site_a_id = None
+        if isinstance(data, (int, str)) and str(data).isdigit():
+            site_a_id = int(data)
+
+        initial_data = getattr(self.parent, 'initial_data', {}) if self.parent else {}
+        if not site_a_id and isinstance(initial_data, dict):
+            raw_site_a = initial_data.get('site_a_material_id')
+            if raw_site_a and str(raw_site_a).isdigit():
+                site_a_id = int(raw_site_a)
+
+        if site_a_id is not None:
+            mat = Material.objects.filter(site_a_material_id=site_a_id).first()
+            if mat:
+                return mat
+
+            # 3. Auto-provision local Material if not present
+            mat_name = ''
+            unit = 'Units'
+            if isinstance(initial_data, dict):
+                mat_name = initial_data.get('material_name') or ''
+                unit = initial_data.get('unit') or 'Units'
+            if not mat_name:
+                mat_name = f"Material #{site_a_id}"
+
+            default_cat, _ = Category.objects.get_or_create(name="General")
+            mat, _ = Material.objects.get_or_create(
+                site_a_material_id=site_a_id,
+                defaults={
+                    'name': mat_name,
+                    'category': default_cat,
+                    'unit': unit,
+                    'quantity_available': 0,
+                    'status': 'In Stock',
+                }
+            )
+            return mat
+
+        raise serializers.ValidationError(f"Invalid material identifier: {data}")
+
 
 class MaterialRequestSerializer(serializers.ModelSerializer):
+    material = FlexibleMaterialPrimaryKeyRelatedField(queryset=Material.objects.all())
     material_name = serializers.ReadOnlyField(source='material.name')
     requested_by_name = serializers.ReadOnlyField(source='requested_by.username')
     approved_by_name = serializers.ReadOnlyField(source='approved_by.username')

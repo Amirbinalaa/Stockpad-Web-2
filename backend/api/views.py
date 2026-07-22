@@ -244,10 +244,11 @@ class CreateRequestView(generics.CreateAPIView):
             f"Dispatching WM Website sync for request {material_request.id} "
             f"(material: {material_request.material.name}) to background thread."
         )
+        site_a_mat_id = material_request.material.site_a_material_id or material_request.material.id
         _site_a_executor.submit(
             _sync_to_site_a,
             material_request.id,
-            material_request.material.site_a_material_id,
+            site_a_mat_id,
             self.request.user.email,      # forwarded to WM so managers see who requested
             material_request.quantity_needed,
             material_request.justification,
