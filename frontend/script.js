@@ -686,10 +686,10 @@ function renderMaterials() {
     }
     if (searchVal) filtered = filtered.filter(m => m.name.toLowerCase().includes(searchVal));
     grid.innerHTML = filtered.map((m, i) => {
-        const rawStatus = m.status || m.stock_status || '';
+        const rawStatus = m.stock_status || m.status || '';
         let displayStatus = rawStatus;
         if (!displayStatus) {
-            const qtyNum = Number(m.quantity ?? m.quantity_available ?? 0);
+            const qtyNum = Number(m.quantity_available ?? m.quantity ?? 0);
             displayStatus = qtyNum > 0 ? 'In Stock' : 'Out of Stock';
         } else if (displayStatus === 'out_of_stock') {
             displayStatus = 'Out of Stock';
@@ -701,9 +701,9 @@ function renderMaterials() {
             displayStatus = 'On Order';
         }
 
-        const qtyVal = m.quantity ?? m.quantity_available ?? 0;
+        const qtyVal = m.quantity_available ?? m.quantity ?? 0;
         const unitVal = m.unit || '';
-        const catDisplayName = _getMaterialCategoryName(m) || 'Uncategorized';
+        const catDisplayName = m.category_name || _getMaterialCategoryName(m) || 'Uncategorized';
         const escapedName = (m.name || '').replace(/'/g, "\\'");
         const escapedUnit = unitVal.replace(/'/g, "\\'");
         const siteAId = m.site_a_material_id || m.id;

@@ -46,6 +46,15 @@ def load_data_professional_from_file(file_obj, filename):
     except Exception as e:
         return f"❌ خطأ في معالجة الملف: {str(e)}"
 
+class GeminiAPIError(Exception):
+    """Raised when the Gemini API rejects a request (e.g. invalid/missing API key)."""
+
+    def __init__(self, status_code: int, detail: str):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(detail)
+
+
 class InventoryChatBot:
     """
     Refactored InventoryChatBot compatible with Python 3.8 and REST API.
@@ -73,6 +82,9 @@ class InventoryChatBot:
 
     def generate_response(self, user_question: str, history=None, user_lang: str = "en") -> str:
         """Generates response using direct REST API, supporting multi-turn conversation."""
+        if not self.api_key:
+            raise GeminiAPIError(403, "GEMINI_API_KEY is not configured")
+
         try:
             # 1. System instruction and context
             system_prompt = f"{self.system_instruction}\n\n"
@@ -123,7 +135,12 @@ class InventoryChatBot:
             else:
                 if resp.status_code == 429:
                     return "⚠️ تجاوزت الحد المسموح. انتظر دقيقة وحاول تاني." if user_lang == "ar" else "⚠️ AI quota exceeded. Please wait a moment."
+                if resp.status_code == 403:
+                    detail = resp.text[:500] if resp.text else "Forbidden"
+                    raise GeminiAPIError(403, detail)
                 return f"⚠️ حصل مشكلة تقنية ({resp.status_code})." if user_lang == "ar" else f"⚠️ AI error ({resp.status_code})."
 
+        except GeminiAPIError:
+            raise
         except Exception as e:
             return f"❌ حصلت مشكلة: {str(e)}"

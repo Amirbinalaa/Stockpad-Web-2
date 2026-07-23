@@ -84,7 +84,7 @@ from .serializers import (
     ChatMessageSerializer, ChatConversationSerializer,
 )
 from .permissions import IsOwnerOrStaff
-from .chatbot_logic import InventoryChatBot, load_data_professional_from_file
+from .chatbot_logic import InventoryChatBot, GeminiAPIError, load_data_professional_from_file
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 
@@ -992,7 +992,24 @@ class ChatbotView(APIView):
                 bot.uploaded_file_data += "=== نهاية الملفات المرفوعة ===\n"
 
             # 5. Generate response with history
-            reply = bot.generate_response(user_message, history=history_data, user_lang=user_lang)
+            try:
+                reply = bot.generate_response(user_message, history=history_data, user_lang=user_lang)
+            except GeminiAPIError as exc:
+                logger.error(
+                    "[Chatbot] Gemini API error %s: %s",
+                    exc.status_code,
+                    exc.detail,
+                )
+                if user_lang == "ar":
+                    reply = (
+                        "عذراً، مساعد الذكاء الاصطناعي غير متاح حالياً بسبب مشكلة في مفتاح API. "
+                        "يمكنك الاطلاع على المخزون من صفحة المواد أو التواصل مع مدير المخزن."
+                    )
+                else:
+                    reply = (
+                        "Sorry, the AI assistant is temporarily unavailable due to an API key issue. "
+                        "You can still browse inventory on the Materials page or contact your Warehouse Manager."
+                    )
             
             # 6. Save message
             ChatMessage.objects.create(
