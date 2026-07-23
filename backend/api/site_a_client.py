@@ -153,10 +153,7 @@ def check_engineer_status_on_wm(engineer_email: str) -> dict:
     return {"connected": False, "manager_name": None}
 
 
-_WM_REQUEST_ENDPOINTS = (
-    "/api/inventory/requests/",
-    "/api/inventory/requests/create/",
-)
+_WM_REQUEST_ENDPOINT = "/api/inventory/requests/create/"
 
 
 def _log_wm_request_sync_error(status_code, response_body: str) -> None:
@@ -208,6 +205,31 @@ def resolve_wm_material_id(material, engineer_email: str):
     return None
 
 
+def resolve_wm_requester_id(engineer_email: str):
+    """Resolve the WM engineer PK (requester_id) for outbound request sync."""
+    engineer_email = (engineer_email or "").lower().strip()
+    if not engineer_email:
+        return None
+
+    headers = _wm_headers()
+    for path in _WM_STATUS_ENDPOINTS:
+        try:
+            resp = requests.get(
+                f"{settings.WM_WEBSITE_BASE_URL}{path}",
+                params={"email": engineer_email},
+                headers=headers,
+                timeout=8,
+            )
+            if resp.ok:
+                data = resp.json()
+                requester_id = data.get("engineer_id") or data.get("requester_id")
+                if requester_id is not None:
+                    return int(requester_id)
+        except requests.exceptions.RequestException:
+            continue
+    return None
+
+
 def submit_request_to_site_a(
     *,
     material_id,
@@ -218,56 +240,50 @@ def submit_request_to_site_a(
 ):
     """POST a new material request to the WM Website (inventory_materialrequest).
 
-    Sends both legacy and WM-native field names so the remote serializer accepts
-    the payload regardless of version.
+    WM requires ``material`` (WM material PK) and ``requester_id`` (WM engineer PK).
+    The engineer PK is resolved from the connections/status endpoint using email.
 
     Args:
         material_id:     The WM Website's own material PK (Material.site_a_material_id).
         quantity:        Integer/Decimal quantity being requested.
         requester_email: Email of the PE engineer who raised the request.
-        justification:   Free-text reason for the request.
+        justification:   Free-text reason for the request (maps to WM ``reason``).
         webhook_url:     Full public URL of our receiver webhook endpoint.
 
     Returns:
         dict — WM JSON response including the created request "id".
 
     Raises:
-        SiteAError: on non-2xx HTTP responses from WM.
+        SiteAError: on non-2xx HTTP responses from WM or missing requester_id.
         requests.exceptions.RequestException: on network failures.
     """
     requester_email = (requester_email or "").lower().strip()
-    notes = justification or ""
+    reason = justification or ""
+    requester_id = resolve_wm_requester_id(requester_email)
+    if requester_id is None:
+        msg = f"Could not resolve WM requester_id for engineer {requester_email}"
+        _log_wm_request_sync_error("missing_requester_id", msg)
+        raise SiteAError(msg)
+
     payload = {
-        "material_id": material_id,
-        "site_a_material_id": material_id,
+        "material": material_id,
+        "requester_id": requester_id,
         "quantity": quantity,
-        "requested_quantity": quantity,
-        "justification": notes,
-        "notes": notes,
+        "reason": reason,
         "requester_email": requester_email,
-        "engineer_email": requester_email,
         "webhook_url": webhook_url or settings.SITE_B_PUBLIC_WEBHOOK_URL,
     }
+    url = f"{settings.WM_WEBSITE_BASE_URL}{_WM_REQUEST_ENDPOINT}"
     headers = _wm_headers()
-    last_error = None
 
-    for path in _WM_REQUEST_ENDPOINTS:
-        url = f"{settings.WM_WEBSITE_BASE_URL}{path}"
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=10)
-            if resp.ok:
-                return resp.json()
-            _log_wm_request_sync_error(resp.status_code, resp.text)
-            last_error = SiteAError(
-                f"WM request HTTP {resp.status_code} at {path}: {resp.text[:500]}"
-            )
-            if resp.status_code == 404:
-                continue
-            raise last_error
-        except requests.exceptions.RequestException as exc:
-            _log_wm_request_sync_error("network", str(exc))
-            raise
-
-    if last_error:
-        raise last_error
-    raise SiteAError("WM request sync failed: no endpoint accepted the payload.")
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=10)
+        if resp.ok:
+            return resp.json()
+        _log_wm_request_sync_error(resp.status_code, resp.text)
+        raise SiteAError(
+            f"WM request HTTP {resp.status_code} at {_WM_REQUEST_ENDPOINT}: {resp.text[:500]}"
+        )
+    except requests.exceptions.RequestException as exc:
+        _log_wm_request_sync_error("network", str(exc))
+        raise

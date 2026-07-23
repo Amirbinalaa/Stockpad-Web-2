@@ -227,10 +227,11 @@ class SiteAIntegrationTests(APITestCase):
         history = RequestStatusHistory.objects.filter(request=material_request)
         self.assertEqual(history.count(), 0)
 
+    @patch('api.site_a_client.resolve_wm_requester_id', return_value=1)
     @patch('requests.post')
-    def test_submit_request_to_site_a_client(self, mock_post):
+    def test_submit_request_to_site_a_client(self, mock_post, mock_requester):
+        mock_post.return_value.ok = True
         mock_post.return_value.json.return_value = {"id": 12345, "status": "pending"}
-        mock_post.return_value.raise_for_status.return_value = None
 
         result = submit_request_to_site_a(
             material_id=456,
@@ -240,17 +241,15 @@ class SiteAIntegrationTests(APITestCase):
         )
 
         self.assertEqual(result["id"], 12345)
+        mock_requester.assert_called_once_with("engineer@test.com")
         mock_post.assert_called_once_with(
-            "https://mock-site-a.com/api/inventory/requests/",
+            "https://mock-site-a.com/api/inventory/requests/create/",
             json={
-                "material_id": 456,
-                "site_a_material_id": 456,
+                "material": 456,
+                "requester_id": 1,
                 "quantity": 5,
-                "requested_quantity": 5,
-                "justification": "justification reason",
-                "notes": "justification reason",
+                "reason": "justification reason",
                 "requester_email": "engineer@test.com",
-                "engineer_email": "engineer@test.com",
                 "webhook_url": "https://mock-site-b.com/api/webhooks/material-status/",
             },
             headers={"X-Site-B-API-Key": "test-site-b-api-key"},
