@@ -1,8 +1,11 @@
 import requests
 import pandas as pd
 import os
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 def load_data_professional_from_file(file_obj, filename):
     """
@@ -60,8 +63,8 @@ class InventoryChatBot:
     Refactored InventoryChatBot compatible with Python 3.8 and REST API.
     """
 
-    def __init__(self, api_key: str):
-        self.api_key = api_key
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
         self.inventory_data: str = ""
         self.website_faq: str = "الموقع بيسمحلك ترفع ملف خطة إنتاج وتقارنها بالمخزن."
         self.uploaded_file_data: str = ""
@@ -110,57 +113,48 @@ class InventoryChatBot:
             
             contents.append({"role": "user", "parts": [{"text": user_prompt}]})
 
-            # Call API via requests with defensive fallback
-            models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-            last_resp = None
+            # Call API via requests directly with gemini-2.0-flash
+            api_url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"gemini-2.0-flash:generateContent?key={self.api_key}"
+            )
 
-            for model_name in models_to_try:
-                api_url = (
-                    f"https://generativelanguage.googleapis.com/v1beta/models/"
-                    f"{model_name}:generateContent?key={self.api_key}"
-                )
-
-                payload = {
-                    "contents": contents,
-                    "generationConfig": {
-                        "temperature": 0.7,
-                        "maxOutputTokens": 2048,
-                    }
+            payload = {
+                "contents": contents,
+                "generationConfig": {
+                    "temperature": 0.7,
+                    "maxOutputTokens": 2048,
                 }
+            }
 
-                try:
-                    resp = requests.post(api_url, json=payload, timeout=30)
-                    last_resp = resp
-                    
-                    if resp.status_code == 404:
-                        # Fallback to next model
-                        continue
-                    
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        try:
-                            return data["candidates"][0]["content"]["parts"][0]["text"]
-                        except:
-                            return "تلقيت رداً لكن لم أتمكن من قراءته." if user_lang == "ar" else "I received a response but couldn't parse it."
-                    else:
-                        if resp.status_code == 429:
-                            return "⚠️ تجاوزت الحد المسموح. انتظر دقيقة وحاول تاني." if user_lang == "ar" else "⚠️ AI quota exceeded. Please wait a moment."
-                        if resp.status_code == 403:
-                            detail = resp.text[:500] if resp.text else "Forbidden"
-                            raise GeminiAPIError(403, detail)
-                        # For other status codes, break loop to return the error
-                        break
-                except requests.RequestException as e:
-                    # If it's a network request issue, continue fallback or break
-                    if model_name == models_to_try[-1]:
-                        return f"❌ حصلت مشكلة في الاتصال بالنموذج: {str(e)}"
-                    continue
-
-            if last_resp is not None:
-                return f"⚠️ حصل مشكلة تقنية ({last_resp.status_code})." if user_lang == "ar" else f"⚠️ AI error ({last_resp.status_code})."
-            return "⚠️ فشل الاتصال بالنموذج." if user_lang == "ar" else "⚠️ Connection to model failed."
+            try:
+                resp = requests.post(api_url, json=payload, timeout=30)
+                
+                if resp.status_code == 200:
+                    data = resp.json()
+                    try:
+                        return data["candidates"][0]["content"]["parts"][0]["text"]
+                    except Exception as e:
+                        logger.exception("Failed to parse Gemini response JSON. Response: %s", data)
+                        return "تلقيت رداً لكن لم أتمكن من قراءته." if user_lang == "ar" else "I received a response but couldn't parse it."
+                else:
+                    logger.error(
+                        "Gemini API request failed with status code %s. Response: %s",
+                        resp.status_code,
+                        resp.text
+                    )
+                    if resp.status_code == 429:
+                        return "⚠️ تجاوزت الحد المسموح. انتظر دقيقة وحاول تاني." if user_lang == "ar" else "⚠️ AI quota exceeded. Please wait a moment."
+                    if resp.status_code == 403:
+                        detail = resp.text[:500] if resp.text else "Forbidden"
+                        raise GeminiAPIError(403, detail)
+                    return f"⚠️ حصل مشكلة تقنية ({resp.status_code})." if user_lang == "ar" else f"⚠️ AI error ({resp.status_code})."
+            except requests.RequestException as e:
+                logger.exception("Network connection to Gemini API failed: %s", e)
+                return f"❌ حصلت مشكلة في الاتصال بالنموذج: {str(e)}"
 
         except GeminiAPIError:
             raise
         except Exception as e:
+            logger.exception("Unexpected error in chatbot logic: %s", e)
             return f"❌ حصلت مشكلة: {str(e)}"
