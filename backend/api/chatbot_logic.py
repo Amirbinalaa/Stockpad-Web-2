@@ -88,8 +88,12 @@ class InventoryChatBot:
 
     def generate_response(self, user_question: str, history=None, user_lang: str = "en") -> str:
         """Generates response using Groq, supporting multi-turn conversation."""
-        if not self.api_key:
-            raise GeminiAPIError(403, "GROQ_API_KEY is not configured")
+        raw_key = os.environ.get("GROQ_API_KEY") or self.api_key or ""
+        clean_key = "".join(raw_key.split())
+
+        if not clean_key:
+            logger.error("GROQ_API_KEY is missing or empty after sanitization.")
+            raise GeminiAPIError(403, "GROQ_API_KEY is not configured or is empty.")
 
         try:
             # 1. System instruction and context
@@ -146,8 +150,8 @@ class InventoryChatBot:
             # ------------------------------------------------------
 
             try:
-                # Initialize the Groq client
-                client = Groq(api_key=self.api_key)
+                # Initialize the Groq client with the sanitized API key
+                client = Groq(api_key=clean_key)
                 
                 # Update the chat completion logic to use model "llama-3.3-70b-versatile"
                 response = client.chat.completions.create(
