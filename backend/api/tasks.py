@@ -129,5 +129,3 @@ def sync_retry_spike_sentinel_task():
         return check_sync_retry_spike_sentinel()
     except Exception as e:
         logger.error(f"[Celery Task] Error in sync retry spike sentinel: {e}")
-
-
