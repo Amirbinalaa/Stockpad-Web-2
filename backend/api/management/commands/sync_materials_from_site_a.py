@@ -148,9 +148,17 @@ class Command(BaseCommand):
             logger.info(f"{action} material {material.name} (Site A ID: {site_a_id}, Stock: {qty})")
             synced_count += 1
 
+        if synced_count > 0:
+            from api.cache_utils import invalidate_wm_catalog_cache
+            try:
+                invalidate_wm_catalog_cache()
+            except Exception as e:
+                logger.warning(f"WM catalog cache invalidation failed after sync: {e}")
+
         summary_msg = (
             f"Successfully synchronized {synced_count} materials "
             f"(Created: {created_count}, Updated: {updated_count})."
         )
         self.stdout.write(self.style.SUCCESS(summary_msg))
         logger.info(f"Materials catalog synchronization completed. {summary_msg}")
+

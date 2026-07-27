@@ -237,6 +237,7 @@ def submit_request_to_site_a(
     requester_email,
     justification="",
     webhook_url=None,
+    idempotency_key=None,
 ):
     """POST a new material request to the WM Website (inventory_materialrequest).
 
@@ -249,6 +250,7 @@ def submit_request_to_site_a(
         requester_email: Email of the PE engineer who raised the request.
         justification:   Free-text reason for the request (maps to WM ``reason``).
         webhook_url:     Full public URL of our receiver webhook endpoint.
+        idempotency_key: Stable UUID string generated once per logical request.
 
     Returns:
         dict — WM JSON response including the created request "id".
@@ -273,6 +275,9 @@ def submit_request_to_site_a(
         "requester_email": requester_email,
         "webhook_url": webhook_url or settings.SITE_B_PUBLIC_WEBHOOK_URL,
     }
+    if idempotency_key:
+        payload["idempotency_key"] = str(idempotency_key)
+
     url = f"{settings.WM_WEBSITE_BASE_URL}{_WM_REQUEST_ENDPOINT}"
     headers = _wm_headers()
 

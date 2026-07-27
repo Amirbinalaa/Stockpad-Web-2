@@ -43,3 +43,5 @@ urllib3==2.2.3
 gunicorn==22.0.0
 groq
 tabulate
+celery==5.6.3
+redis==8.0.1

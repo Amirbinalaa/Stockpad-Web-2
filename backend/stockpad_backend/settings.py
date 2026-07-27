@@ -250,6 +250,43 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
 }
 
+def _cache_redis_url():
+    """Use a dedicated Redis DB for Django cache (Celery stays on REDIS_URL / db 0)."""
+    explicit = _env("REDIS_CACHE_URL")
+    if explicit:
+        return explicit
+    base = _env("REDIS_URL", "redis://localhost:6379/0")
+    parsed = urllib.parse.urlparse(base)
+    return urllib.parse.urlunparse(parsed._replace(path="/1"))
+
+
+# Celery Configuration
+CELERY_BROKER_URL = _env("REDIS_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = _env("REDIS_URL", "redis://localhost:6379/0")
+
+# Cache — shared Redis so web workers and Celery tasks see the same keys.
+# Tests use LocMem (see DATABASES pattern above) so the suite runs without Redis.
+if "test" in sys.argv:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "stockpad-test-cache",
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": _cache_redis_url(),
+        }
+    }
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_ALWAYS_EAGER = _env("CELERY_TASK_ALWAYS_EAGER", "True").lower() in ("true", "1")
+
+
 # Simple JWT Settings
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),
@@ -302,6 +339,11 @@ WEBHOOK_SHARED_SECRET = (
     _env("WEBHOOK_SHARED_SECRET")
     or _env("SITE_A_WEBHOOK_SECRET")
 )  # HMAC-SHA256 shared secret — used to verify X-Webhook-Signature on inbound webhooks
+WEBHOOK_SHARED_SECRET_NEW = (
+    _env("WEBHOOK_SHARED_SECRET_NEW")
+    or _env("SITE_A_WEBHOOK_SECRET_NEW")
+)  # optional second secret during HMAC rotation (verify both until cutover)
+SYNC_RETRY_SPIKE_THRESHOLD = int(_env("SYNC_RETRY_SPIKE_THRESHOLD", "5") or "5")
 _site_b_webhook = _env("SITE_B_PUBLIC_WEBHOOK_URL")
 if _site_b_webhook:
     _site_b_webhook = _site_b_webhook.rstrip("/")
@@ -318,6 +360,14 @@ SITE_B_PUBLIC_WEBHOOK_URL = (
 SITE_A_BASE_URL       = WM_WEBSITE_BASE_URL
 SITE_A_API_KEY        = WM_WEBSITE_API_KEY
 SITE_A_WEBHOOK_SECRET = WEBHOOK_SHARED_SECRET
+SITE_A_WEBHOOK_SECRET_NEW = WEBHOOK_SHARED_SECRET_NEW
+
+CELERY_BEAT_SCHEDULE = {
+    "sync-retry-spike-sentinel": {
+        "task": "api.tasks.sync_retry_spike_sentinel_task",
+        "schedule": 900.0,  # every 15 minutes — backup alert if counter still high
+    },
+}
 
 # Startup validation check for production settings
 if not DEBUG:

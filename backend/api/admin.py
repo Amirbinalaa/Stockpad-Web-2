@@ -3,7 +3,8 @@ from django.contrib.auth.admin import UserAdmin
 from .models import (
     User, Profile, Category, Material, MaterialRequest, RequestStatusHistory,
     Product, BOMItem, ProductionPlan, ProductionPlanItem, MaterialRequirement,
-    Supplier, ProcurementRequest, ProcurementOrder,
+    Supplier, ProcurementRequest, ProcurementOrder, ProcessedWebhookEvent,
+    OutboundSyncDeadLetterLog,
 )
 
 
@@ -122,3 +123,19 @@ class ProcurementOrderAdmin(admin.ModelAdmin):
     list_display = ('supplier', 'total_amount', 'status', 'order_date', 'expected_delivery_date')
     list_filter = ('status', 'supplier')
     search_fields = ('supplier__name', 'supplier_order_number')
+
+
+@admin.register(ProcessedWebhookEvent)
+class ProcessedWebhookEventAdmin(admin.ModelAdmin):
+    list_display = ('event_id', 'received_at')
+    search_fields = ('event_id',)
+    readonly_fields = ('received_at',)
+
+
+@admin.register(OutboundSyncDeadLetterLog)
+class OutboundSyncDeadLetterLogAdmin(admin.ModelAdmin):
+    list_display = ('request', 'url', 'attempt_count', 'created_at')
+    list_filter = ('attempt_count',)
+    search_fields = ('url', 'error_message')
+    readonly_fields = ('created_at',)
+

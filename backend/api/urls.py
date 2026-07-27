@@ -14,7 +14,7 @@ from .views import (
     MaterialRequestDetailView,
     ChatConversationListView, ChatConversationDetailView, ChatMessageListView,
     RequestStatusHistoryViewSet,
-    SiteAWebhookView,
+    SiteAWebhookView, HealthCheckView,
     # Dashboard
     InventorySummaryView, DashboardAnalyticsView, NotificationsView,
     # BOM
@@ -56,6 +56,7 @@ urlpatterns = [
     path('requests/', CreateRequestView.as_view(), name='create-request'),
     path('requests/mine/', MyRequestsView.as_view(), name='my-requests'),
     path('requests/all/', AllRequestsView.as_view(), name='all-requests'),
+    path('v1/health/', HealthCheckView.as_view(), name='health-check'),
     path('webhooks/material-status/', SiteAWebhookView.as_view(), name='site-a-webhook'),
     path('requests/<int:pk>/', MaterialRequestDetailView.as_view(), name='request-detail'),
 

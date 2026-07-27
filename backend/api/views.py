@@ -1,12 +1,14 @@
 from . import serializers
 from rest_framework import generics, status, permissions, viewsets
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db import models, transaction
+from django.db import models, transaction, IntegrityError
+from django.core.cache import cache
 from django.db.models import Q, Sum, Count
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -18,7 +20,7 @@ import hmac
 import hashlib
 import os
 import json
-from concurrent.futures import ThreadPoolExecutor
+
 
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -32,65 +34,32 @@ from .site_a_client import (
     resolve_wm_material_id,
 )
 
+from .tasks import sync_request_to_site_a_task
+from .cache_utils import register_wm_catalog_key
+from .insights import (
+    ai_insights_cache_key,
+    format_insights_for_chatbot,
+    get_ai_inventory_insights,
+)
+from .webhook_auth import verify_webhook_hmac_signature
+
 logger = logging.getLogger('api')
 
-# Module-level thread pool — reused across all requests, avoids per-request thread overhead.
-_site_a_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="site_a_sync")
 
+class HealthCheckView(APIView):
+    """Health-check endpoint exposed for Site A compatibility."""
+    permission_classes = [permissions.AllowAny]
 
-def _sync_to_site_a(request_id, material_pk, requester_email, quantity, reason):
-    """
-    Background worker: calls the WM Website and updates the local MaterialRequest with the result.
-    Runs in a thread-pool thread so the HTTP response is never blocked by WM Website latency.
+    def get(self, request):
+        return Response({"status": "healthy"}, status=status.HTTP_200_OK)
 
-    Args:
-        request_id:      Local MaterialRequest PK — used to write back the result.
-        material_pk:     Local Material PK — reloaded in-thread to resolve WM material_id.
-        requester_email: Engineer's email — forwarded to WM so managers know who requested.
-        quantity:        Quantity being requested.
-        reason:          Free-text justification (maps to MaterialRequest.justification).
-    """
-    from django.db import connection
-    from .models import MaterialRequest, Material
-    try:
-        material = Material.objects.get(pk=material_pk)
-        wm_material_id = resolve_wm_material_id(material, requester_email)
-        if wm_material_id is None:
-            msg = (
-                f"material '{material.name}' has no site_a_material_id "
-                f"and WM catalog lookup failed for {requester_email}"
-            )
-            print(f"[WM Request Sync Error]: status missing_material_id response {msg}")
-            logger.error("[WM Request Sync Error]: %s", msg)
-            MaterialRequest.objects.filter(pk=request_id).update(sync_status='sync_failed')
-            return
-
-        if material.site_a_material_id != wm_material_id:
-            Material.objects.filter(pk=material_pk).update(site_a_material_id=wm_material_id)
-
-        site_a_response = submit_request_to_site_a(
-            material_id=wm_material_id,
-            quantity=quantity,
-            requester_email=requester_email,
-            justification=reason or "",
-        )
-        MaterialRequest.objects.filter(pk=request_id).update(
-            site_a_request_id=site_a_response["id"],
-            sync_status='synced',
-        )
-        logger.info(f"[BG] Request {request_id} synced to WM Website (WM ID: {site_a_response['id']}).")
-    except (SiteAError, requests.exceptions.RequestException) as e:
-        MaterialRequest.objects.filter(pk=request_id).update(sync_status='sync_failed')
-        logger.error(f"[BG] Failed to sync request {request_id} to WM Website: {e}")
-    finally:
-        connection.close()
 
 
 from .models import (
     User, Material, MaterialRequest, Category,
     Product, BOMItem, ProductionPlan, ProductionPlanItem, MaterialRequirement,
     Supplier, ProcurementRequest, ProcurementOrder, RequestStatusHistory,
-    ChatMessage, ChatConversation,
+    ChatMessage, ChatConversation, ProcessedWebhookEvent,
 )
 from .serializers import (
     UserSerializer, RegisterSerializer, EmailTokenObtainPairSerializer,
@@ -257,13 +226,22 @@ class CreateRequestView(generics.CreateAPIView):
             notes='Initial request created.'
         )
 
-        # Fire-and-forget: submit to background thread and return immediately to the caller.
+        # Fast, non-blocking O(1) in-memory cache invalidation (0 DB queries, 0 network calls)
+        email = (self.request.user.email or '').lower().strip()
+        cache.delete_many([
+            f"wm_catalog_{email}",
+            f"ai_inventory_context_{email}",
+            f"dashboard_analytics_{email}",
+            f"inventory_summary_{email}",
+            ai_insights_cache_key(email),
+        ])
+
+        # Fire-and-forget: submit to Celery task queue and return immediately to caller.
         logger.info(
             f"Dispatching WM Website sync for request {material_request.id} "
-            f"(material: {material_request.material.name}) to background thread."
+            f"(material: {material_request.material.name}) to Celery task queue."
         )
-        _site_a_executor.submit(
-            _sync_to_site_a,
+        sync_request_to_site_a_task.delay(
             material_request.id,
             material_request.material_id,
             self.request.user.email,
@@ -272,9 +250,16 @@ class CreateRequestView(generics.CreateAPIView):
         )
 
 
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class MyRequestsView(generics.ListAPIView):
     serializer_class = MaterialRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         return MaterialRequest.objects.filter(requested_by=self.request.user).order_by('-request_date')
@@ -342,14 +327,7 @@ class SiteAWebhookView(APIView):
         # WM Website signs:  HMAC-SHA256(secret, f"{timestamp}.{raw_json_body}")
         # We must reconstruct the exact same signing message.
         raw_body_str = request.body.decode("utf-8")
-        signing_message = f"{received_ts}.{raw_body_str}".encode("utf-8")
-        expected_sig = hmac.new(
-            key=settings.WEBHOOK_SHARED_SECRET.encode("utf-8"),
-            msg=signing_message,
-            digestmod=hashlib.sha256,
-        ).hexdigest()
-
-        if not hmac.compare_digest(received_sig, expected_sig):
+        if not verify_webhook_hmac_signature(received_sig, received_ts, raw_body_str):
             logger.warning("Inbound webhook rejected: HMAC signature mismatch.")
             return HttpResponse(status=403)
 
@@ -362,6 +340,26 @@ class SiteAWebhookView(APIView):
 
         site_a_id  = payload.get("id")
         raw_status = payload.get("status")
+        event_id_str = payload.get("event_id")
+
+        # ── Step 4.5: Check event_id idempotency ─────────────────────────────
+        if event_id_str:
+            try:
+                event_uuid = uuid.UUID(str(event_id_str))
+            except (ValueError, TypeError):
+                logger.warning(f"Inbound webhook rejected: invalid event_id '{event_id_str}'.")
+                return HttpResponse(status=400)
+
+            # Atomic savepoint to record seen event_id. If duplicate, IntegrityError
+            # is caught cleanly within this savepoint without poisoning transaction state.
+            try:
+                with transaction.atomic():
+                    ProcessedWebhookEvent.objects.create(event_id=event_uuid)
+            except IntegrityError:
+                logger.info(
+                    f"Webhook event_id {event_id_str} already processed — returning HTTP 200 (duplicate ignored)."
+                )
+                return JsonResponse({"ok": True, "duplicate": True}, status=200)
 
         # ── Step 5: Map WM status values to our internal choices ─────────────
         # WM Website sends "approved" or "denied"; our MaterialRequest model
@@ -390,6 +388,15 @@ class SiteAWebhookView(APIView):
                         f"Webhook: request {material_request.id} (WM ID: {site_a_id}) "
                         f"updated '{old_status}' → '{new_status}'."
                     )
+                    # Invalidate cached dashboard analytics and insights
+                    req_email = (material_request.requested_by.email or '').lower().strip() if material_request.requested_by else ''
+                    cache.delete_many([
+                        f"wm_catalog_{req_email}",
+                        f"ai_inventory_context_{req_email}",
+                        f"dashboard_analytics_{req_email}",
+                        f"inventory_summary_{req_email}",
+                        ai_insights_cache_key(req_email),
+                    ])
                 else:
                     logger.info(
                         f"Webhook: request {material_request.id} already has "
@@ -430,8 +437,16 @@ class WMCatalogProxyView(APIView):
                 {'error': 'Engineer email not set on this account.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        cache_key = f"wm_catalog_{engineer_email}"
+        cached_data = cache.get(cache_key)
+        if cached_data is not None:
+            return Response(cached_data, status=status.HTTP_200_OK)
+
         try:
             materials = fetch_wm_catalog_for_engineer(engineer_email)
+            cache.set(cache_key, materials, timeout=300)
+            register_wm_catalog_key(cache_key)
             return Response(materials, status=status.HTTP_200_OK)
         except SiteAError as exc:
             logger.warning(f"[WM Catalog Proxy] WM error for {engineer_email}: {exc}")
@@ -486,6 +501,12 @@ class InventorySummaryView(APIView):
 
     def get(self, request):
         from django.db.models import F as _F
+        email = (request.user.email or '').lower().strip()
+        cache_key = f"inventory_summary_{email}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
         total_materials = Material.objects.count()
         in_stock = Material.objects.filter(status='In Stock').count()
         low_stock = Material.objects.filter(status='Low Stock').count()
@@ -500,7 +521,7 @@ class InventorySummaryView(APIView):
         pending_requests = MaterialRequest.objects.filter(status='pending').count()
         approved_requests = MaterialRequest.objects.filter(status='approved').count()
 
-        return Response({
+        data = {
             'materials': {
                 'total': total_materials,
                 'in_stock': in_stock,
@@ -515,7 +536,9 @@ class InventorySummaryView(APIView):
             },
             'categories': Category.objects.count(),
             'suppliers': Supplier.objects.filter(is_active=True).count(),
-        })
+        }
+        cache.set(cache_key, data, timeout=120)
+        return Response(data)
 
 
 # ─────────────────────────────────────────────
@@ -531,6 +554,12 @@ class DashboardAnalyticsView(APIView):
         from django.utils import timezone as tz
         from datetime import timedelta
         import calendar
+
+        email = (request.user.email or '').lower().strip()
+        cache_key = f"dashboard_analytics_{email}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
 
         # ── Monthly requests – last 6 months ──────────────────────────────
         today = tz.now()
@@ -578,7 +607,7 @@ class DashboardAnalyticsView(APIView):
             for item in cat_values_qs
         ]
 
-        return Response({
+        data = {
             'monthly_requests': {
                 'labels': monthly_labels,
                 'data': monthly_counts,
@@ -586,7 +615,10 @@ class DashboardAnalyticsView(APIView):
             'top_materials': top_materials,
             'status_breakdown': status_breakdown,
             'inventory_by_category': cat_data,
-        })
+            'ai_insights': get_ai_inventory_insights(email),
+        }
+        cache.set(cache_key, data, timeout=120)
+        return Response(data)
 
 
 # ─────────────────────────────────────────────
@@ -930,11 +962,18 @@ class ChatbotView(APIView):
 
     def _build_inventory_context(self, user=None):
         """Build a compact markdown table of inventory scoped to the engineer's WM catalog."""
+        email = (user.email or '').lower().strip() if (user and getattr(user, 'email', None)) else ''
+        if email:
+            cache_key = f"ai_inventory_context_{email}"
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return cached
+
         # Attempt to fetch engineer-scoped WM catalog first
         wm_items = []
-        if user and getattr(user, 'email', None):
+        if email:
             try:
-                wm_items = fetch_wm_catalog_for_engineer(user.email.lower().strip())
+                wm_items = fetch_wm_catalog_for_engineer(email)
             except Exception:
                 wm_items = []
 
@@ -958,7 +997,10 @@ class ChatbotView(APIView):
                 }
                 status = status_map.get(str(raw_status).lower().replace(' ', '_'), raw_status or 'In Stock')
                 lines.append(f"| {name} | {cat} | {qty} | {unit} | {status} |")
-            return "\n".join(lines)
+            result = "\n".join(lines)
+            if email:
+                cache.set(f"ai_inventory_context_{email}", result, timeout=300)
+            return result
 
         # Fall back to all local PE materials
         materials = Material.objects.select_related('category').all()
@@ -972,7 +1014,17 @@ class ChatbotView(APIView):
                 f"| {m.name} | {cat_name} | {m.quantity_available} | {m.unit} "
                 f"| {m.status} | {m.unit_cost} |"
             )
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        if email:
+            cache.set(f"ai_inventory_context_{email}", result, timeout=300)
+        return result
+
+    def _build_chatbot_inventory_data(self, user=None):
+        """Inventory table plus engineer-scoped AI insights."""
+        email = (user.email or "").lower().strip() if user else ""
+        table = self._build_inventory_context(user=user)
+        insights_text = format_insights_for_chatbot(get_ai_inventory_insights(email))
+        return f"{table}\n\n{insights_text}"
 
     def post(self, request):
         user_message = request.data.get("message", "").strip()
@@ -997,7 +1049,7 @@ class ChatbotView(APIView):
 
             # 3. Initialize Bot
             bot = InventoryChatBot(api_key=GEMINI_API_KEY)
-            bot.inventory_data = self._build_inventory_context(user=request.user)
+            bot.inventory_data = self._build_chatbot_inventory_data(user=request.user)
             
             # 4. Handle Files
             uploaded_files = request.FILES.getlist('files')

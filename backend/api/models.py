@@ -130,9 +130,10 @@ class MaterialRequest(models.Model):
     material = models.ForeignKey(Material, on_delete=models.CASCADE, related_name='material_requests')
     quantity_needed = models.IntegerField()
     justification = models.TextField(null=True, blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     request_date = models.DateTimeField(auto_now_add=True)
     site_a_request_id = models.IntegerField(null=True, blank=True, unique=True, db_index=True)
+    idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True, null=True, blank=True)
     sync_status = models.CharField(
         max_length=20,
         choices=[('not_synced', 'Not Synced'), ('synced', 'Synced'), ('sync_failed', 'Sync Failed')],
@@ -156,6 +157,38 @@ class MaterialRequest(models.Model):
 
     def __str__(self):
         return f"Request for {self.material.name} by {self.requested_by.username}"
+
+
+class ProcessedWebhookEvent(models.Model):
+    """Stores seen webhook event_ids to ensure inbound webhook idempotency."""
+    event_id = models.UUIDField(unique=True, db_index=True)
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Processed Webhook Event"
+        verbose_name_plural = "Processed Webhook Events"
+        ordering = ['-received_at']
+
+    def __str__(self):
+        return str(self.event_id)
+
+
+class OutboundSyncDeadLetterLog(models.Model):
+    """Dead-letter log for permanently-failed outbound request submissions (exhausted retries)."""
+    request = models.ForeignKey(MaterialRequest, on_delete=models.SET_NULL, null=True, blank=True, related_name='dead_letter_logs')
+    url = models.CharField(max_length=500)
+    payload = models.JSONField()
+    error_message = models.TextField()
+    attempt_count = models.IntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Outbound Sync Dead Letter Log"
+        verbose_name_plural = "Outbound Sync Dead Letter Logs"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"DeadLetter Log #{self.pk} for Request {self.request_id}"
 
 
 # ─────────────────────────────────────────────
