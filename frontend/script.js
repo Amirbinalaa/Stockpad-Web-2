@@ -320,8 +320,13 @@ const AUTH_VIEWS = ['login', 'signup', 'forgot', 'reset'];
 const APP_VIEWS = ['inventory', 'chatbot', 'requests', 'profile'];
 let currentView = null;
 let viewInitialized = {};
+let requestsPollInterval = null;
 
 function navigateTo(view) {
+    if (requestsPollInterval && view !== 'requests') {
+        clearInterval(requestsPollInterval);
+        requestsPollInterval = null;
+    }
     // Hide all
     AUTH_VIEWS.forEach(v => { const el = document.getElementById(`view-${v}`); if (el) el.classList.remove('active'); });
     APP_VIEWS.forEach(v => { const el = document.getElementById(`view-${v}`); if (el) el.style.display = 'none'; });
@@ -344,6 +349,12 @@ function navigateTo(view) {
     else if (view === 'inventory') loadMaterials();
     else if (view === 'requests') loadRequests();
     else if (view === 'profile') { loadProfile(); loadRecentActivity(); }
+
+    if (view === 'requests' && !requestsPollInterval) {
+        requestsPollInterval = setInterval(() => {
+            if (currentView === 'requests') loadRequests();
+        }, 15000);
+    }
     i18n.applyToPage();
 }
 
@@ -372,6 +383,8 @@ function setupTheme() {
 // ══════════════════════════════════════════════════════════════
 // NOTIFICATIONS (shared)
 // ══════════════════════════════════════════════════════════════
+let lastNotificationCount = null;
+
 function timeAgo(iso) {
     const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
     if (diff < 60) return 'Just now';
@@ -384,6 +397,11 @@ async function loadNotificationsFor(prefix) {
     try {
         const data = await api.getNotifications();
         const notifs = data.notifications || [];
+        if (lastNotificationCount !== null && notifs.length > lastNotificationCount && currentView === 'requests') {
+            loadRequests();
+        }
+        lastNotificationCount = notifs.length;
+
         const badge = document.getElementById(`${prefix}-notifBadge`);
         const list = document.getElementById(`${prefix}-notifList`);
         if (!badge || !list) return;
@@ -939,7 +957,7 @@ function renderRequests(requests, isManager) {
     list.innerHTML = requests.map(r => {
         const statusLabel = i18n.t(`req.${r.status}`);
         const date = new Date(r.created_at || r.request_date).toLocaleDateString();
-        const isOwn = r.requested_by_id === currentUserId || r.user === currentUserId;
+        const isOwn = r.requested_by === currentUserId;
         const canManage = false; // Deprecated local approvals, managed on Website 1
         const canEdit = isOwn && r.status === 'pending';
         let actionsHTML = '';
@@ -952,7 +970,7 @@ function renderRequests(requests, isManager) {
             <div class="request-header"><div class="request-info"><h3>${r.material_name || 'Material'}</h3><span class="request-id">#REQ-${String(r.id).padStart(4,'0')}</span></div>${userActionsHTML}<span class="status-badge ${r.status}">${statusLabel}</span></div>
             <div class="request-body">
                 <div class="request-detail"><i class="fas fa-boxes"></i><div><span class="detail-label">${i18n.t('req.requestedQty')}</span><span class="detail-value">${r.quantity_needed || r.quantity} ${r.unit || ''}</span></div></div>
-                <div class="request-detail"><i class="fas fa-user"></i><div><span class="detail-label">${i18n.t('req.requestedBy')}</span><span class="detail-value">${r.requested_by || r.user_name || 'Unknown'} ${isOwn ? i18n.t('req.you') : ''}</span></div></div>
+                <div class="request-detail"><i class="fas fa-user"></i><div><span class="detail-label">${i18n.t('req.requestedBy')}</span><span class="detail-value">${r.requested_by_name || r.user_name || 'Unknown'} ${isOwn ? i18n.t('req.you') : ''}</span></div></div>
                 <div class="request-detail"><i class="fas fa-calendar"></i><div><span class="detail-label">${i18n.t('req.requestDate')}</span><span class="detail-value">${date}</span></div></div>
             </div>
             ${r.justification ? `<div class="request-notes">${r.justification}</div>` : ''}
