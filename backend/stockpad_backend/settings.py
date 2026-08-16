@@ -329,7 +329,7 @@ PE_BACKEND_PUBLIC_URL = (
 WM_WEBSITE_BASE_URL = (
     _env("WM_WEBSITE_BASE_URL")
     or _env("SITE_A_BASE_URL")
-    or "https://stockpad-backend-production.up.railway.app"
+    or "https://stockpad-backend-production-1de67.up.railway.app"
 ).rstrip("/")
 WM_WEBSITE_API_KEY = (
     _env("WM_WEBSITE_API_KEY")

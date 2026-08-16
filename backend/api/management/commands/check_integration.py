@@ -43,7 +43,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  WM base URL:    {settings.WM_WEBSITE_BASE_URL}")
         self.stdout.write(f"  Webhook URL:    {settings.SITE_B_PUBLIC_WEBHOOK_URL}")
 
-        if settings.WM_WEBSITE_BASE_URL.rstrip("/") != "https://stockpad-backend-production.up.railway.app":
+        if settings.WM_WEBSITE_BASE_URL.rstrip("/") != "https://stockpad-backend-production-1de67.up.railway.app":
             failures += 1
             self.stdout.write(self.style.WARNING("[WARN] WM_WEBSITE_BASE_URL is not the production WM domain."))
 

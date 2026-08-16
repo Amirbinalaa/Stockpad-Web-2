@@ -4,7 +4,7 @@ Once Website 1's team shares the production credentials, perform the following s
 
 ## 1. Credentials Configuration
 - [ ] Configure environment variables in the host environment (or updated `.env` file):
-  - `SITE_A_BASE_URL`: The production URL of Website 1 (e.g. `https://stockpad-backend-production.up.railway.app`)
+  - `SITE_A_BASE_URL`: The production URL of Website 1 (e.g. `https://stockpad-backend-production-1de67.up.railway.app`)
   - `SITE_A_API_KEY`: The API key supplied by Website 1's team.
   - `SITE_A_WEBHOOK_SECRET`: The HMAC secret shared by Website 1 to verify incoming signatures.
   - `SITE_B_PUBLIC_WEBHOOK_URL`: The public-facing endpoint of this instance (e.g. `https://your-domain.com/api/webhooks/material-status/`). Note that localhost/127.0.0.1 cannot receive external webhooks from Website 1 unless exposed via ngrok or cloudflare tunnels.

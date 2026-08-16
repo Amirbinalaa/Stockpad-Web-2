@@ -1,6 +1,6 @@
 # StockPad — Engineer App (Website 2)
 
-A Django REST Framework backend + vanilla-JS frontend for Wheeler & Senior's internal material request workflow. Engineers submit material requests through this app; approvals are handled by [StockPad (Website 1)](https://stockpad-backend-production.up.railway.app) and pushed back here via signed webhooks.
+A Django REST Framework backend + vanilla-JS frontend for Wheeler & Senior's internal material request workflow. Engineers submit material requests through this app; approvals are handled by [StockPad (Website 1)](https://stockpad-backend-production-1de67.up.railway.app) and pushed back here via signed webhooks.
 
 ---
 
@@ -58,7 +58,7 @@ Website 2/
 
 - Python 3.8+
 - PostgreSQL 13+
-- A running instance of [Website 1 (StockPad)](https://stockpad-backend-production.up.railway.app) with API credentials
+- A running instance of [Website 1 (StockPad)](https://stockpad-backend-production-1de67.up.railway.app) with API credentials
 
 ---
 
@@ -123,7 +123,7 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 GEMINI_API_KEY=your-gemini-key
 
 # Website 1 integration
-SITE_A_BASE_URL=https://stockpad-backend-production.up.railway.app
+SITE_A_BASE_URL=https://stockpad-backend-production-1de67.up.railway.app
 SITE_A_API_KEY=supplied-by-website-1-team
 SITE_A_WEBHOOK_SECRET=supplied-by-website-1-team
 SITE_B_PUBLIC_WEBHOOK_URL=https://your-domain.com/api/webhooks/material-status/
