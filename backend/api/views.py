@@ -293,7 +293,8 @@ class AllRequestsView(generics.ListAPIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class SiteAWebhookView(APIView):
-    permission_classes = [permissions.AllowAny]  # authenticated via HMAC, not session/JWT
+    authentication_classes = []  # authenticated via HMAC, not session/JWT
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request):
         import time as _time
