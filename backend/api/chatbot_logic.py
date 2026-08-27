@@ -153,9 +153,9 @@ class InventoryChatBot:
                 # Initialize the Groq client with the sanitized API key
                 client = Groq(api_key=clean_key)
                 
-                # Update the chat completion logic to use model "llama-3.3-70b-versatile"
+                # Update the chat completion logic to use model "openai/gpt-oss-120b"
                 response = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="openai/gpt-oss-120b",
                     messages=messages,
                     temperature=0.7,
                 )
