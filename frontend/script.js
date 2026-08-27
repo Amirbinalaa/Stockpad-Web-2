@@ -132,7 +132,7 @@ const i18n = {
 // ══════════════════════════════════════════════════════════════
 // PE Backend (Website 2) — all API calls route through this server.
 // The PE backend proxies WM site requests server-to-server (avoids CORS).
-const PE_BACKEND_URL = 'https://stockpad-web-2-production.up.railway.app';
+const PE_BACKEND_URL = 'https://stockpad-web-2-production-ae5f.up.railway.app';
 const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:')
     ? 'http://127.0.0.1:8000'
     : PE_BACKEND_URL;
@@ -219,7 +219,7 @@ const api = {
             return data.user;
         }
     },
-    logout: async () => { const refresh = localStorage.getItem('refresh_token'); if (refresh) await api.request('/auth/logout/', 'POST', { refresh }).catch(() => {}); api.clearToken(); localStorage.removeItem('remember_me'); localStorage.removeItem('user_email'); navigateTo('login'); },
+    logout: async () => { const refresh = localStorage.getItem('refresh_token'); if (refresh) await api.request('/auth/logout/', 'POST', { refresh }).catch(() => { }); api.clearToken(); localStorage.removeItem('remember_me'); localStorage.removeItem('user_email'); navigateTo('login'); },
     getMe: async () => { const user = await api.request('/auth/me/'); if (user && user.avatar && !user.avatar.startsWith('http')) user.avatar = `${API_BASE}${user.avatar}`; return user; },
     // UserMeView extends RetrieveUpdateAPIView — supports GET, PUT, PATCH.
     // We use PUT to perform updates to the user profile.
@@ -302,9 +302,9 @@ const api = {
         const overlay = document.createElement('div');
         overlay.style = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);display:flex;justify-content:center;align-items:center;z-index:99999;animation:modalFadeIn 0.3s ease;`;
         const content = document.createElement('div');
-        content.style = `background:${isDark?'#1f2937':'white'};color:${isDark?'#f3f4f6':'#111827'};padding:2.5rem;border-radius:20px;max-width:420px;width:90%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5);border:1px solid ${isDark?'#374151':'#e5e7eb'};`;
+        content.style = `background:${isDark ? '#1f2937' : 'white'};color:${isDark ? '#f3f4f6' : '#111827'};padding:2.5rem;border-radius:20px;max-width:420px;width:90%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5);border:1px solid ${isDark ? '#374151' : '#e5e7eb'};`;
         const iconColor = isError ? '#ef4444' : '#f97316';
-        content.innerHTML = `<div style="width:60px;height:60px;background:${iconColor}20;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem;"><i class="fas ${isError?'fa-exclamation-triangle':(callback?'fa-question-circle':'fa-check-circle')}" style="font-size:1.5rem;color:${iconColor};"></i></div><h3 style="margin-top:0;font-size:1.5rem;font-weight:700;margin-bottom:0.5rem;">${title}</h3><p style="color:${isDark?'#9ca3af':'#6b7280'};margin-bottom:2rem;line-height:1.5;">${message}</p><div style="display:flex;gap:12px;justify-content:center;">${callback?`<button id="modalCancel" style="background:${isDark?'#374151':'#f3f4f6'};color:${isDark?'#f3f4f6':'#111827'};border:none;padding:0.8rem 1.5rem;border-radius:12px;cursor:pointer;font-weight:600;flex:1;">Cancel</button>`:''}<button id="modalConfirm" style="background:${iconColor};color:white;border:none;padding:0.8rem 1.5rem;border-radius:12px;cursor:pointer;font-weight:700;flex:1;">${callback?'Yes, Proceed':'Got it'}</button></div>`;
+        content.innerHTML = `<div style="width:60px;height:60px;background:${iconColor}20;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem;"><i class="fas ${isError ? 'fa-exclamation-triangle' : (callback ? 'fa-question-circle' : 'fa-check-circle')}" style="font-size:1.5rem;color:${iconColor};"></i></div><h3 style="margin-top:0;font-size:1.5rem;font-weight:700;margin-bottom:0.5rem;">${title}</h3><p style="color:${isDark ? '#9ca3af' : '#6b7280'};margin-bottom:2rem;line-height:1.5;">${message}</p><div style="display:flex;gap:12px;justify-content:center;">${callback ? `<button id="modalCancel" style="background:${isDark ? '#374151' : '#f3f4f6'};color:${isDark ? '#f3f4f6' : '#111827'};border:none;padding:0.8rem 1.5rem;border-radius:12px;cursor:pointer;font-weight:600;flex:1;">Cancel</button>` : ''}<button id="modalConfirm" style="background:${iconColor};color:white;border:none;padding:0.8rem 1.5rem;border-radius:12px;cursor:pointer;font-weight:700;flex:1;">${callback ? 'Yes, Proceed' : 'Got it'}</button></div>`;
         overlay.appendChild(content);
         document.body.appendChild(overlay);
         const close = (result) => { document.body.removeChild(overlay); if (callback) callback(result); };
@@ -388,9 +388,9 @@ let lastNotificationCount = null;
 function timeAgo(iso) {
     const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
     if (diff < 60) return 'Just now';
-    if (diff < 3600) return Math.floor(diff/60) + 'm ago';
-    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
-    return Math.floor(diff/86400) + 'd ago';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return Math.floor(diff / 86400) + 'd ago';
 }
 
 async function loadNotificationsFor(prefix) {
@@ -413,7 +413,7 @@ async function loadNotificationsFor(prefix) {
             badge.style.display = 'none';
             list.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">You\'re all caught up! ✓</div>';
         }
-    } catch(e) { /* silently fail */ }
+    } catch (e) { /* silently fail */ }
 }
 
 function setupNotifBell(prefix) {
@@ -430,7 +430,7 @@ function setupNotifBell(prefix) {
 // VIEW INITIALIZERS
 // ══════════════════════════════════════════════════════════════
 function initView(view) {
-    switch(view) {
+    switch (view) {
         case 'login': initLogin(); break;
         case 'signup': initSignup(); break;
         case 'forgot': initForgot(); break;
@@ -517,13 +517,13 @@ function handleGoogleResponse(response) {
         api.showModal('Error', 'Google authentication failed. No credential received.', true);
         return;
     }
-    
+
     // Disable buttons layout during request
     const btnContainer1 = document.getElementById('googleLoginBtnContainer');
     const btnContainer2 = document.getElementById('googleSignupBtnContainer');
     if (btnContainer1) btnContainer1.style.opacity = '0.5';
     if (btnContainer2) btnContainer2.style.opacity = '0.5';
-    
+
     api.googleLogin(response.credential)
         .then((user) => {
             if (user) {
@@ -544,12 +544,12 @@ function initGoogleAuth() {
         setTimeout(initGoogleAuth, 100);
         return;
     }
-    
+
     google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
         callback: handleGoogleResponse
     });
-    
+
     const loginContainer = document.getElementById('googleLoginBtnContainer');
     if (loginContainer) {
         google.accounts.id.renderButton(
@@ -557,7 +557,7 @@ function initGoogleAuth() {
             { theme: 'outline', size: 'large', shape: 'rectangular', text: 'signin_with' }
         );
     }
-    
+
     const signupContainer = document.getElementById('googleSignupBtnContainer');
     if (signupContainer) {
         google.accounts.id.renderButton(
@@ -619,7 +619,7 @@ async function loadMaterials() {
         try {
             const data = await api.getMaterials();
             allMaterials = Array.isArray(data) ? data : (data.results || []);
-        } catch(e) {
+        } catch (e) {
             console.error('[Inventory] Failed to load local materials:', e);
         }
     }
@@ -726,7 +726,7 @@ function renderMaterials() {
         const escapedUnit = unitVal.replace(/'/g, "\\'");
         const siteAId = m.site_a_material_id || m.id;
 
-        return `<div class="product-card animate-in" style="animation-delay:${i*0.03}s">
+        return `<div class="product-card animate-in" style="animation-delay:${i * 0.03}s">
             <div class="card-header"><h3 class="product-name">${m.name}</h3><span class="stock-badge">${displayStatus}</span></div>
             <div class="card-body"><p class="product-category">${catDisplayName}</p>
             <div class="stock-text-container"><span class="stock-qty">${qtyVal} ${unitVal}</span></div></div>
@@ -764,7 +764,7 @@ async function submitInventoryRequest() {
         });
         api.showModal('Success', 'Request submitted successfully!');
         closeRequestModal();
-    } catch(e) { api.showModal('Error', e.message, true); }
+    } catch (e) { api.showModal('Error', e.message, true); }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -805,7 +805,7 @@ function addBotMessage(text) {
     html = html.replace(/^[-•] (.+)$/gm, '<li>$1</li>');
     if (html.includes('<li>')) html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
     html = html.replace(/\n/g, '<br>');
-    div.innerHTML = `<div class="message-avatar"><i class="fas fa-robot"></i></div><div class="message-bubble"><p>${html}</p><span class="message-time">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>`;
+    div.innerHTML = `<div class="message-avatar"><i class="fas fa-robot"></i></div><div class="message-bubble"><p>${html}</p><span class="message-time">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>`;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
 }
@@ -816,7 +816,7 @@ function addUserMessage(text, files = []) {
     div.className = 'message user-message';
     let attachHTML = '';
     if (files.length > 0) attachHTML = `<div class="message-attachments">${files.map(f => `<div class="attachment-item"><i class="fas fa-file"></i><span>${f.name}</span></div>`).join('')}</div>`;
-    div.innerHTML = `<div class="message-avatar"><i class="fas fa-user"></i></div><div class="message-bubble"><p>${text}</p>${attachHTML}<span class="message-time">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>`;
+    div.innerHTML = `<div class="message-avatar"><i class="fas fa-user"></i></div><div class="message-bubble"><p>${text}</p>${attachHTML}<span class="message-time">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>`;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
 }
@@ -840,7 +840,7 @@ async function sendChatMessage() {
         if (result.conversation_id) chatConversationId = result.conversation_id;
         document.getElementById('typing-indicator')?.remove();
         addBotMessage(result.reply || result.response || result.message || 'Sorry, I could not generate a response. Please try again.');
-    } catch(e) {
+    } catch (e) {
         document.getElementById('typing-indicator')?.remove();
         addBotMessage('Sorry, I encountered an error. Please try again.');
     }
@@ -868,7 +868,7 @@ async function openHistory() {
             const date = new Date(c.updated_at || c.created_at).toLocaleDateString();
             return `<div class="history-item" onclick="loadConversation(${c.id})"><div class="history-item-header"><span class="history-date">${date}</span><i class="fas fa-trash delete-conv" onclick="event.stopPropagation();deleteConv(${c.id})"></i></div><h4 class="history-title">${c.title || 'Conversation'}</h4><span class="history-meta">${c.message_count || '?'} ${i18n.t('chat.messages')}</span></div>`;
         }).join('');
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
 }
 function closeHistory() { document.getElementById('historyPanel').classList.remove('active'); document.getElementById('historyOverlay').classList.remove('active'); }
 async function loadConversation(id) {
@@ -883,7 +883,7 @@ async function loadConversation(id) {
             if (m.message) addUserMessage(m.message);
             if (m.reply) addBotMessage(m.reply);
         });
-    } catch(e) { addBotMessage('Failed to load conversation.'); }
+    } catch (e) { addBotMessage('Failed to load conversation.'); }
 }
 async function deleteConv(id) {
     api.showModal(i18n.t('chat.confirmDelete'), '', false, async (ok) => { if (ok) { await api.deleteConversation(id); openHistory(); } });
@@ -925,17 +925,17 @@ async function loadMaterialsForSelect() {
         }).join('');
         if (typeof $ !== 'undefined' && $.fn.select2) {
             $(select).select2({ dropdownParent: document.getElementById('newRequestModal'), placeholder: i18n.t('req.selectMaterial'), allowClear: true });
-            $(select).on('change', function() {
+            $(select).on('change', function () {
                 const opt = this.options[this.selectedIndex];
                 document.getElementById('unitDisplay').textContent = opt?.dataset?.unit || '-';
             });
         } else {
-            select.addEventListener('change', function() {
+            select.addEventListener('change', function () {
                 const opt = this.options[this.selectedIndex];
                 document.getElementById('unitDisplay').textContent = opt?.dataset?.unit || '-';
             });
         }
-    } catch(e) { console.error('[loadMaterialsForSelect]', e); }
+    } catch (e) { console.error('[loadMaterialsForSelect]', e); }
 }
 
 async function loadRequests() {
@@ -946,7 +946,7 @@ async function loadRequests() {
         if (isManager) { const data = await api.getAllRequests(); requests = Array.isArray(data) ? data : (data.results || []); }
         else { const data = await api.getMyRequests(); requests = Array.isArray(data) ? data : (data.results || []); }
         renderRequests(requests, isManager);
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
 }
 
 function renderRequests(requests, isManager) {
@@ -961,13 +961,13 @@ function renderRequests(requests, isManager) {
         const canManage = false; // Deprecated local approvals, managed on Website 1
         const canEdit = isOwn && r.status === 'pending';
         let actionsHTML = '';
-        if (canManage) actionsHTML = `<div class="request-actions"><button class="btn-approve" onclick="approveReq(${r.id})"><i class="fas fa-check"></i> ${i18n.t('req.approve')}</button><button class="btn-reject" onclick="openRejectionModal(${r.id},'${(r.material_name||'').replace(/'/g,"\\'")}')"><i class="fas fa-times"></i> ${i18n.t('req.reject')}</button></div>`;
+        if (canManage) actionsHTML = `<div class="request-actions"><button class="btn-approve" onclick="approveReq(${r.id})"><i class="fas fa-check"></i> ${i18n.t('req.approve')}</button><button class="btn-reject" onclick="openRejectionModal(${r.id},'${(r.material_name || '').replace(/'/g, "\\'")}')"><i class="fas fa-times"></i> ${i18n.t('req.reject')}</button></div>`;
         if (r.status === 'approved') actionsHTML = `<div class="approval-info"><i class="fas fa-check-circle"></i> ${i18n.t('req.approved')}</div>`;
         if (r.status === 'rejected') actionsHTML = `<div class="rejection-info"><i class="fas fa-times-circle"></i> ${i18n.t('req.rejected')}${r.rejection_reason ? ': ' + r.rejection_reason : ''}</div>`;
         let userActionsHTML = '';
-        if (canEdit) userActionsHTML = `<div class="user-actions"><button class="action-icon edit" onclick="openEditModal(${r.id},'${(r.material_name||'').replace(/'/g,"\\'")}',${r.quantity_needed || r.quantity},'${(r.justification||'').replace(/'/g,"\\'")}')" title="Edit"><i class="fas fa-pen"></i></button><button class="action-icon delete" onclick="deleteReq(${r.id})" title="Delete"><i class="fas fa-trash"></i></button></div>`;
+        if (canEdit) userActionsHTML = `<div class="user-actions"><button class="action-icon edit" onclick="openEditModal(${r.id},'${(r.material_name || '').replace(/'/g, "\\'")}',${r.quantity_needed || r.quantity},'${(r.justification || '').replace(/'/g, "\\'")}')" title="Edit"><i class="fas fa-pen"></i></button><button class="action-icon delete" onclick="deleteReq(${r.id})" title="Delete"><i class="fas fa-trash"></i></button></div>`;
         return `<div class="request-card ${r.status}">
-            <div class="request-header"><div class="request-info"><h3>${r.material_name || 'Material'}</h3><span class="request-id">#REQ-${String(r.id).padStart(4,'0')}</span></div>${userActionsHTML}<span class="status-badge ${r.status}">${statusLabel}</span></div>
+            <div class="request-header"><div class="request-info"><h3>${r.material_name || 'Material'}</h3><span class="request-id">#REQ-${String(r.id).padStart(4, '0')}</span></div>${userActionsHTML}<span class="status-badge ${r.status}">${statusLabel}</span></div>
             <div class="request-body">
                 <div class="request-detail"><i class="fas fa-boxes"></i><div><span class="detail-label">${i18n.t('req.requestedQty')}</span><span class="detail-value">${r.quantity_needed || r.quantity} ${r.unit || ''}</span></div></div>
                 <div class="request-detail"><i class="fas fa-user"></i><div><span class="detail-label">${i18n.t('req.requestedBy')}</span><span class="detail-value">${r.requested_by_name || r.user_name || 'Unknown'} ${isOwn ? i18n.t('req.you') : ''}</span></div></div>
@@ -1001,15 +1001,15 @@ async function submitRequest() {
         api.showModal('Success', 'Request submitted!');
         closeNewRequestModal();
         loadRequests();
-    } catch(e) { api.showModal('Error', e.message, true); }
+    } catch (e) { api.showModal('Error', e.message, true); }
 }
 // NOTE: approveReq() and submitRejection() are intentionally removed.
 // Approval / rejection of MaterialRequests is handled exclusively by the WM
 // webhook (SiteAWebhookView). There are no local approve/reject endpoints.
 function openEditModal(id, name, qty, notes) { currentEditId = id; document.getElementById('editMaterialName').textContent = name; document.getElementById('editQuantity').value = qty; document.getElementById('editNotes').value = notes; document.getElementById('editModal').style.display = 'flex'; }
 function closeEditModal() { document.getElementById('editModal').style.display = 'none'; }
-async function updateRequest() { const qty = parseInt(document.getElementById('editQuantity').value); const notes = document.getElementById('editNotes').value; try { await api.updateRequest(currentEditId, qty, notes); api.showModal('Success', 'Request updated!'); closeEditModal(); loadRequests(); } catch(e) { api.showModal('Error', e.message, true); } }
-async function deleteReq(id) { api.showModal('Delete Request', 'Are you sure you want to delete this request?', true, async (ok) => { if (ok) { try { await api.deleteRequest(id); loadRequests(); } catch(e) { api.showModal('Error', e.message, true); } } }); }
+async function updateRequest() { const qty = parseInt(document.getElementById('editQuantity').value); const notes = document.getElementById('editNotes').value; try { await api.updateRequest(currentEditId, qty, notes); api.showModal('Success', 'Request updated!'); closeEditModal(); loadRequests(); } catch (e) { api.showModal('Error', e.message, true); } }
+async function deleteReq(id) { api.showModal('Delete Request', 'Are you sure you want to delete this request?', true, async (ok) => { if (ok) { try { await api.deleteRequest(id); loadRequests(); } catch (e) { api.showModal('Error', e.message, true); } } }); }
 
 // Export functions
 function exportRequestsPDF() {
@@ -1026,7 +1026,7 @@ function exportRequestsPDF() {
         });
         doc.autoTable({ head: [['ID', 'Material', 'Status']], body: rows, startY: 35 });
         doc.save('requests-report.pdf');
-    } catch(e) { api.showModal('Error', 'Failed to export PDF.', true); }
+    } catch (e) { api.showModal('Error', 'Failed to export PDF.', true); }
 }
 function exportRequestsExcel() {
     try {
@@ -1037,7 +1037,7 @@ function exportRequestsExcel() {
         const ws = XLSX.utils.aoa_to_sheet(rows);
         const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Requests');
         XLSX.writeFile(wb, 'requests-report.xlsx');
-    } catch(e) { api.showModal('Error', 'Failed to export Excel.', true); }
+    } catch (e) { api.showModal('Error', 'Failed to export Excel.', true); }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1071,7 +1071,7 @@ async function loadProfile() {
         document.getElementById('editRole').value = roleMapping[currentUserData.role.toLowerCase()] || 'Engineer';
         // Ensure email is always persisted for WM integration (covers page-refresh scenarios)
         localStorage.setItem('user_email', currentUserData.email);
-    } catch(e) { console.error('Failed to load profile:', e); }
+    } catch (e) { console.error('Failed to load profile:', e); }
 }
 
 /**
@@ -1118,7 +1118,7 @@ async function loadWMConnectionStatus() {
 
 async function handleAvatarUpload(event) {
     const file = event.target.files[0]; if (!file) return;
-    try { await api.uploadAvatar(file); api.showModal('Success', 'Profile photo updated!'); loadProfile(); } catch(e) { api.showModal('Upload Failed', e.message, true); }
+    try { await api.uploadAvatar(file); api.showModal('Success', 'Profile photo updated!'); loadProfile(); } catch (e) { api.showModal('Upload Failed', e.message, true); }
 }
 
 async function toggleEditMode() {
@@ -1136,7 +1136,7 @@ async function toggleEditMode() {
             editBtnText.setAttribute('data-i18n', 'profile.editBtn'); editBtnText.textContent = i18n.t('profile.editBtn');
             fields.forEach(f => { document.getElementById(f.display).style.display = 'block'; document.getElementById(f.edit).style.display = 'none'; });
             loadProfile();
-        } catch(e) { api.showModal('Update Failed', e.message, true); }
+        } catch (e) { api.showModal('Update Failed', e.message, true); }
     } else {
         editBtnText.setAttribute('data-i18n', 'profile.saveBtn'); editBtnText.textContent = i18n.t('profile.saveBtn');
         fields.forEach(f => { document.getElementById(f.display).style.display = 'none'; document.getElementById(f.edit).style.display = 'block'; });
@@ -1161,7 +1161,7 @@ async function loadRecentActivity() {
         } else {
             activityList.innerHTML = `<div class="activity-item"><i class="fas fa-info-circle"></i><div><p>${i18n.t('profile.noActivity')}</p><small>${i18n.t('profile.noActivitySub')}</small></div></div>`;
         }
-    } catch(e) { console.error('Activity load error:', e); }
+    } catch (e) { console.error('Activity load error:', e); }
 }
 
 function openPasswordModal() { document.getElementById('passwordModal').style.display = 'flex'; }

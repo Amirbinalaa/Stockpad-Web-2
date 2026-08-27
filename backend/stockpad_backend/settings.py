@@ -322,7 +322,7 @@ GOOGLE_CLIENT_SECRET = _env('GOOGLE_CLIENT_SECRET', '')
 # ── Website 1 (WM Website) Integration Settings ──────────────────────────────
 PE_BACKEND_PUBLIC_URL = (
     _env("PE_BACKEND_PUBLIC_URL")
-    or "https://stockpad-web-2-production.up.railway.app"
+    or "https://stockpad-web-2-production-ae5f.up.railway.app"
 ).rstrip("/")
 
 # Primary env var names (task spec / new standard):
